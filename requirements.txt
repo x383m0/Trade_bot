@@ -7,3 +7,5 @@ gymnasium
 stable-baselines3
 torch
 matplotlib
+streamlit
+plotly

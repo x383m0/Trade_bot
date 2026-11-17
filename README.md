@@ -21,6 +21,17 @@ python backtest.py --split val  # compare vs buy & hold / do nothing, saves repo
 python backtest.py --split test # ONLY once you're done tuning — the test set is your "unseen future"
 ```
 
+### Dashboard
+
+```bash
+streamlit run dashboard.py      # opens http://localhost:8501
+```
+
+Keep it open in a second terminal while `train.py` runs: the **Training progress** tab
+refreshes every 5 s (validation return, trades, reward, drawdown per checkpoint).
+The **Backtest** tab shows equity vs buy & hold, buy/sell markers on price, and
+the position over time, after you run `backtest.py`.
+
 Offline / pipeline test: `python -m data.fetch --synthetic` generates a random walk
 (no real edge, so the agent should at best learn to do nothing).
 
@@ -35,6 +46,7 @@ Offline / pipeline test: `python -m data.fetch --synthetic` generates a random w
 | `common.py` | chronological split, train-only normalization, metrics |
 | `train.py` | PPO training with validation checkpointing |
 | `backtest.py` | metrics table + equity chart vs baselines |
+| `dashboard.py` | Streamlit dashboard: live training progress + backtest explorer |
 
 ## Design choices (and why)
 

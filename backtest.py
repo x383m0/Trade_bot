@@ -26,7 +26,7 @@ def main():
     env = make_env(cfg, df, feats)
     model = PPO.load(cfg["paths"]["model"])
 
-    agent_eq, trades = run_episode(model, env)
+    agent_eq, trades, positions = run_episode(model, env)
     start = cfg["train"]["window"] - 1
     close = df["close"].values[start:start + len(agent_eq)]
     cost = cfg["fee"] + cfg["slippage"]
@@ -44,6 +44,12 @@ def main():
     out = Path(cfg["paths"]["report"])
     out.mkdir(exist_ok=True)
     ts = pd.to_datetime(df["ts"].values[start:start + len(agent_eq)], unit="ms")
+
+    # data for the dashboard
+    pd.DataFrame({"time": ts, "close": close, "agent": agent_eq, "buy_hold": bh_eq,
+                  "position": np.append(positions, positions[-1] if len(positions) else 0)}
+                 ).to_csv(out / f"equity_{args.split}.csv", index=False)
+    table.to_csv(out / f"metrics_{args.split}.csv")
     plt.figure(figsize=(11, 5))
     plt.plot(ts, agent_eq, label="PPO agent")
     plt.plot(ts, bh_eq, label="Buy & hold", alpha=0.7)

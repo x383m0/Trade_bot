@@ -50,7 +50,8 @@ def synthetic_ohlcv(n=60000, seed=0, freq="15min"):
     high = np.maximum(open_, close) + spread
     low = np.minimum(open_, close) - spread
     volume = rng.lognormal(3, 0.5, n)
-    ts = pd.date_range("2022-01-01", periods=n, freq=freq).astype("int64") // 10**6
+    dt = pd.date_range("2022-01-01", periods=n, freq=freq)
+    ts = ((dt - pd.Timestamp("1970-01-01")) // pd.Timedelta(milliseconds=1)).astype("int64")  # ms, unit-safe
     return pd.DataFrame({"ts": ts, "open": open_, "high": high, "low": low,
                          "close": close, "volume": volume})
 
