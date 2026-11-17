@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+data/*.parquet
+data/*.csv
+models/
+reports/*.png
+.env
+.venv/

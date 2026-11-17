@@ -1,0 +1,24 @@
+exchange: binance        # any ccxt id: binance, binanceus, kraken, coinbase ...
+symbol: BTC/USDT
+timeframe: 15m           # try 5m / 1h to compare
+years: 2                 # history to download
+
+fee: 0.001               # 0.1% per side
+slippage: 0.0005         # 0.05% per side
+trade_penalty: 0.0002    # extra reward penalty per position change (discourages over-trading)
+
+split:                   # chronological, never shuffled
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+train:
+  algo: PPO
+  total_timesteps: 500000
+  seed: 42
+  window: 32             # bars of history the agent sees
+
+paths:
+  data: data/ohlcv.parquet
+  model: models/ppo_btc
+  report: reports

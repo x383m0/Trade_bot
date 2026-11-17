@@ -1,0 +1,9 @@
+numpy
+pandas
+pyarrow
+pyyaml
+ccxt
+gymnasium
+stable-baselines3
+torch
+matplotlib
