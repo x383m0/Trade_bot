@@ -6,3 +6,4 @@ models/
 reports/*.png
 .env
 .venv/
+reports/*.csv
