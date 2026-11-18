@@ -52,7 +52,8 @@ ETH), each coin is normalized with its own stats, and the best checkpoint is pic
 
 ### Trading rules and reward (config.yaml: `orders`, `rules`, `reward`)
 
-All off by default; they apply identically to training, backtests and paper trading.
+Limit orders are on by default (Kraken maker fee); the rest are off. They apply identically to
+training, backtests and paper trading.
 
 - **Limit orders** (`orders.type: limit`): pay Kraken's 0.25% maker fee instead of 0.40% + slippage.
   The order sits at the candle's close and only fills if the next candle trades through it,

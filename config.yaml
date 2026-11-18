@@ -18,13 +18,14 @@ timeframe: 15m            # candle size: 5m / 15m / 1h. For 1h set years ~8     
 years: 4                  # history to download. 4 years includes bear markets (2022), not just bull runs (re-fetch, retrain)
 
 # --- costs (what Kraken charges) ---
-fee: 0.004                # 0.40% per side = taker (market order) fee, lowest tier    (retrain)
+fee: 0.004                # 0.40% per side = taker (market order) fee, lowest tier. Used by market
+                          # orders and stop-loss exits; limit orders pay orders.maker_fee   (retrain)
 slippage: 0.0005          # 0.05% per side - price moving against you while filling   (retrain)
 trade_penalty: 0.0002     # extra training penalty per trade -> discourages over-trading (retrain)
 
 # --- trading rules (apply to training, backtests and paper trading)                (retrain) ---
 orders:
-  type: market            # market = instant, pays `fee` + `slippage`.
+  type: limit             # market = instant, pays `fee` + `slippage`.
                           # limit  = order at the candle's close, pays `maker_fee`, but only fills
                           #          if the next candle trades through that price (can miss moves)
   maker_fee: 0.0025       # Kraken limit-order (maker) fee, lowest tier

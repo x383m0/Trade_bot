@@ -76,8 +76,8 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 | `years` | 4 | History to download (use ~8 with `1h`) | fetch, train |
 | `fee` | 0.004 | Fee per trade (0.0025 = Kraken limit-order fee) | train |
 | `trade_penalty` | 0.0002 | Higher = bot trades less | train |
-| `orders.type` | market | `limit` = 0.25% maker fee instead of 0.45%, but orders can miss | train |
-| `rules.min_hold` | 0 | Candles it must hold before selling (4 on 15m = 1h, 4 on 1h = 4h) | train |
+| `orders.type` | limit | `limit` = 0.25% maker fee, but orders can miss; `market` = 0.40% + slippage, always fills | train |
+| `rules.min_hold` | 0 | Candles it must hold before selling (24 on 1h = 1 day, 96 on 15m = 1 day) | train |
 | `rules.stop_loss` | 0.0 | Sell at market if the trade is down this much (0.05 = 5%) | train |
 | `reward.type` | profit | `excess` = scored on beating buy & hold, not raw profit | train |
 | `reward.drawdown_penalty` | 0.0 | Punish sinking below its peak (try 0.5–2) | train |
@@ -99,11 +99,16 @@ Save each result with its own name so you can compare later, e.g.
 
 ### Recommended plan (after the 15m verdict: fees + holding through crashes)
 
+Limit orders on Kraken are the default (`orders.type: limit`, 0.25% maker fee).
+
 | Run | Change in config.yaml | Then |
 |---|---|---|
-| 1. 1h baseline | `timeframe: 1h`, `years: 8` | fetch, train, backtest |
-| 2. + cost rules | `orders.type: limit`, `rules.min_hold: 4`, `rules.stop_loss: 0.05` | train, backtest |
+| 1. 1h + limit orders | `timeframe: 1h`, `years: 8` | fetch, train, backtest |
+| 2. + hold for days | `rules.min_hold: 24` (1 day on 1h), `rules.stop_loss: 0.05` | train, backtest |
 | 3. + smarter reward | `reward.type: excess`, `reward.drawdown_penalty: 1.0` | train, backtest |
+
+Why hold for days: with Kraken's fees, trades shorter than ~1 day can't win even with very good
+predictions (a 1h move is ~0.5%, a limit round trip costs ~0.5%).
 
 Keep the changes from the previous run each time. Each run's question: did it beat the previous
 one **against buy & hold**, with fewer trades and a smaller drawdown?
