@@ -56,6 +56,8 @@ train:
   parallel: 1             # seeds trained at the same time. On a strong CPU set it to n_seeds
                           # (or use python train.py --parallel 3) -> ~n_seeds times faster
   device: cpu             # cpu is fastest for this small network; a GPU only helps big models
+  threads: 2              # CPU threads per seed. 2 is fastest (measured); MORE threads is SLOWER here.
+                          # To use a big CPU, train more seeds at once with --parallel instead
   window: 16              # candles of history the agent sees each decision            (retrain)
   learning_rate: 0.0001   # how big each learning step is. Lower = slower but steadier  (retrain)
                           # Run 2: lowered from 0.0003 - in a test on a learnable pattern, 0.0003

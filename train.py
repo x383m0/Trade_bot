@@ -100,6 +100,16 @@ class ValCallback(BaseCallback):
             self._evaluate()
 
 
+def torch_threads(cfg, workers=1):
+    """CPU threads per training process. This network is tiny, so splitting each calculation
+    over many threads costs more than it saves: 2 is fastest (measured), more is SLOWER."""
+    import torch
+    want = cfg["train"].get("threads") or 2
+    n = max(1, min(int(want), (os.cpu_count() or 2) // max(1, workers)))
+    torch.set_num_threads(n)
+    return n
+
+
 def train_one(cfg, splits, seed, timesteps, model_path, log_path):
     syms = list(splits)
     tr_df = [splits[s]["train"][0] for s in syms]
@@ -127,12 +137,11 @@ UNLIMITED = 10 ** 12   # "--timesteps 0": train until Ctrl+C
 INTERRUPTED = False
 
 
-def _train_seed_worker(seed, timesteps, model_path, log_path, threads, fractions=None):
+def _train_seed_worker(seed, timesteps, model_path, log_path, workers, fractions=None):
     """Runs in its own process (--parallel): loads the data itself and trains one seed,
-    limited to `threads` CPU threads so parallel seeds don't fight over the cores."""
-    import torch
-    torch.set_num_threads(threads)
+    with a small number of CPU threads so parallel seeds don't fight over the cores."""
     cfg = load_config()
+    torch_threads(cfg, workers)
     splits, _ = load_splits(cfg, fractions)
     return train_one(cfg, splits, seed, timesteps, model_path, log_path)
 
@@ -147,6 +156,8 @@ def train_seeds(cfg, splits, seeds, timesteps, model_prefix, log_dir, parallel=1
         workers = len(seeds)       # unlimited one-after-another would never reach seed 2
     stopped = False
     if workers == 1:
+        print(f"(using {torch_threads(cfg)} CPU threads - more is slower for this small network; "
+              f"use --parallel to train several seeds at once)")
         results = []
         for i, seed in enumerate(seeds, 1):
             print(f"\n=== seed {seed} ({i}/{len(seeds)}) ===")
@@ -158,13 +169,13 @@ def train_seeds(cfg, splits, seeds, timesteps, model_prefix, log_dir, parallel=1
                 break
     else:
         cores = os.cpu_count() or 2
-        threads = max(1, cores // workers)
+        per = max(1, min(int(cfg["train"].get("threads") or 2), cores // workers))
         print(f"\n=== training {len(seeds)} seeds, {workers} at a time "
-              f"({cores} CPU threads -> {threads} per seed) ===")
+              f"({per} threads each, {cores} CPU threads available) ===")
         # "spawn" works the same on Windows, Linux and Mac
         with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn")) as ex:
             futures = [ex.submit(_train_seed_worker, seed, timesteps, f"{model_prefix}_seed{seed}",
-                                 str(log_dir / f"training_log_seed{seed}.csv"), threads, fractions)
+                                 str(log_dir / f"training_log_seed{seed}.csv"), workers, fractions)
                        for seed in seeds]
             try:
                 for f in futures:

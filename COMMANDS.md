@@ -44,7 +44,8 @@ Rerun after changing `symbol`, `train_symbols`, `timeframe` or `years`.
 **Strong PC?** Training uses only part of the CPU when seeds run one after another; `--parallel N`
 trains N seeds at once, each on its own share of the cores. Rule of thumb: N = CPU threads ÷ 2
 (Task Manager → Performance → CPU shows "Logical processors"). The GPU isn't used: this network is
-small, so the CPU is faster.
+small, so the CPU is faster. Each seed uses 2 threads (`train.threads`): giving one seed more threads
+makes it *slower*, so a big CPU only helps through `--parallel`.
 
 Watch it live in the dashboard's **Training progress** tab. Stop anytime with `Ctrl+C`
 (each seed keeps its best checkpoint, but the ensemble/summary is only written at the end).
