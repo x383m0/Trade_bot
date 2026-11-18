@@ -29,8 +29,11 @@ streamlit run dashboard.py        # dashboard at http://localhost:8501 (run in a
 
 ### Dashboard tabs
 
-- **🟢 Live (paper)**: fake balance vs buy & hold, what the bot holds, buy/sell markers on price,
-  trade log. Refreshes every 5 s. Switch between *Live prices* and *Replay (demo)*.
+- **🟢 Live (paper)**: candlestick chart with buy ▲ / sell ▼ markers, fake balance vs buy & hold,
+  what the bot holds, trade log. Refreshes every 5 s. Switch between *Live prices* and *Replay (demo)*.
+  - *Follow latest candles* ON: chart scrolls with the newest candles (pick how many to show).
+  - OFF: chart pauses so you can zoom/pan freely (drag a box, scroll wheel, double-click to reset);
+    numbers keep updating, click *Load new candles* to catch up.
 - **Training progress**: live while `train.py` runs — validation return, trades, reward, drawdown.
 - **Backtest**: equity vs buy & hold, trades on price, position over time.
 

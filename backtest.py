@@ -42,11 +42,13 @@ def main():
     print(table.to_string())
 
     out = Path(cfg["paths"]["report"])
-    out.mkdir(exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     ts = pd.to_datetime(df["ts"].values[start:start + len(agent_eq)], unit="ms")
 
     # data for the dashboard
-    pd.DataFrame({"time": ts, "close": close, "agent": agent_eq, "buy_hold": bh_eq,
+    ohlc = df.iloc[start:start + len(agent_eq)]
+    pd.DataFrame({"time": ts, "open": ohlc["open"].values, "high": ohlc["high"].values,
+                  "low": ohlc["low"].values, "close": close, "agent": agent_eq, "buy_hold": bh_eq,
                   "position": np.append(positions, positions[-1] if len(positions) else 0)}
                  ).to_csv(out / f"equity_{args.split}.csv", index=False)
     table.to_csv(out / f"metrics_{args.split}.csv")

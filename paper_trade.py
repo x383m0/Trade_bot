@@ -30,7 +30,8 @@ def fmt_ts(ts_ms):
 class PaperAccount:
     """Fake-money spot account: all-in BTC (long) or all-in USD (flat)."""
 
-    EQ_FIELDS = ["time", "price", "equity", "buy_hold", "position", "action"]
+    EQ_FIELDS = ["time", "open", "high", "low", "close", "price", "equity", "buy_hold",
+                 "position", "action"]
     TR_FIELDS = ["time", "side", "price", "qty_btc", "fee_usd", "equity_after"]
 
     def __init__(self, folder, starting_cash, fee, reset=False):
@@ -41,6 +42,8 @@ class PaperAccount:
         self.fee = fee
         self.state_f = self.dir / "state.json"
         self.eq_f, self.tr_f = self.dir / "equity.csv", self.dir / "trades.csv"
+        if self.eq_f.exists() and self.eq_f.read_text().split("\n", 1)[0] != ",".join(self.EQ_FIELDS):
+            raise SystemExit("Log files are from an older version - rerun with --reset to start fresh.")
         if self.state_f.exists():
             self.s = json.loads(self.state_f.read_text())
             print(f"resuming: ${self.s['cash']:.2f} cash + {self.s['btc']:.8f} BTC, "
@@ -58,7 +61,9 @@ class PaperAccount:
         with open(f, "a", newline="") as fh:
             csv.writer(fh).writerow(row)
 
-    def step(self, bar_ts, action, bid, ask):
+    def step(self, bar, action, bid, ask):
+        """bar = the candle just closed (ts, open, high, low, close); trade happens at bid/ask now."""
+        bar_ts = int(bar["ts"])
         s, mid = self.s, (bid + ask) / 2
         if s["start_price"] is None:
             s["start_price"] = ask
@@ -79,8 +84,9 @@ class PaperAccount:
             self._append(self.tr_f, [t, "SELL", round(bid, 2), round(qty, 8), round(fee_usd, 4),
                                      round(self.equity(mid), 4)])
         bh = s["start_cash"] * (1 - self.fee) * mid / s["start_price"]
-        self._append(self.eq_f, [t, round(mid, 2), round(self.equity(mid), 4), round(bh, 4),
-                                 s["pos"], action])
+        ohlc = [round(float(bar[k]), 2) for k in ("open", "high", "low", "close")]
+        self._append(self.eq_f, [t, *ohlc, round(mid, 2), round(self.equity(mid), 4),
+                                 round(bh, 4), s["pos"], action])
         s["last_bar_ts"] = int(bar_ts)
         self.state_f.write_text(json.dumps(s, indent=1))
         return self.equity(mid), bh
@@ -119,7 +125,7 @@ def run_replay(cfg, model, norm, acct, delay, max_bars):
         if action is None:
             continue
         price = df["close"].iloc[i]
-        eq, bh = acct.step(df["ts"].iloc[i], action, price * (1 - slip), price * (1 + slip))
+        eq, bh = acct.step(df.iloc[i], action, price * (1 - slip), price * (1 + slip))
         log_line(df["ts"].iloc[i], price, action, acct, eq, bh)
         time.sleep(delay)
 
@@ -145,7 +151,7 @@ def run_live(cfg, model, norm, acct):
                     tk = ex.fetch_ticker(cfg["symbol"])
                     last = tk.get("last") or bars["close"].iloc[-1]
                     bid, ask = tk.get("bid") or last, tk.get("ask") or last
-                    eq, bh = acct.step(bar_ts, action, bid, ask)
+                    eq, bh = acct.step(bars.iloc[-1], action, bid, ask)
                     log_line(bar_ts, (bid + ask) / 2, action, acct, eq, bh)
         except ccxt.BaseError as e:
             print(f"exchange error ({type(e).__name__}): {e} - retrying in 30s")
