@@ -16,7 +16,8 @@ split:                    # chronological, never shuffled
 train:
   algo: PPO
   total_timesteps: 500000
-  seed: 42
+  seed: 42               # first seed; extra seeds are 43, 44, ...
+  n_seeds: 3             # agents trained per run (python train.py --seeds N to override)
   window: 32              # bars of history the agent sees
 
 paper:

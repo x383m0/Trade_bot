@@ -18,7 +18,7 @@ pip install -r requirements.txt
 
 ```bash
 python -m data.fetch              # download ~2 years of BTC/USD candles from Coinbase
-python train.py                   # train PPO, keeps the best checkpoint on the validation split
+python train.py                   # train 3 agents (seeds), keep the best one on the validation split
 python backtest.py --split val    # compare vs buy & hold / do nothing
 python paper_trade.py --replay    # watch it "trade" the held-out period bar by bar (fast demo)
 python paper_trade.py             # paper trade on LIVE Kraken prices with $20 of fake money
@@ -27,6 +27,15 @@ streamlit run dashboard.py        # dashboard at http://localhost:8501 (run in a
 
 `python backtest.py --split test` only once you're done tuning — the test set is your "unseen future".
 
+### Multiple seeds
+
+RL results change a lot with the random seed: one run can look great purely by luck.
+`train.py` trains `n_seeds` agents (3 by default, `--seeds 5` to change), prints a comparison,
+and copies the best one (by validation return) to the main model used by `backtest.py` and
+`paper_trade.py`. The **Training progress** tab shows one line per seed and a
+"Seeds agree?" check: if seeds disagree a lot, don't trust the best one too much.
+Training time = seeds × one run.
+
 ### Dashboard tabs
 
 - **🟢 Live (paper)**: candlestick chart with buy ▲ / sell ▼ markers, fake balance vs buy & hold,
@@ -34,7 +43,8 @@ streamlit run dashboard.py        # dashboard at http://localhost:8501 (run in a
   - *Follow latest candles* ON: chart scrolls with the newest candles (pick how many to show).
   - OFF: chart pauses so you can zoom/pan freely (drag a box, scroll wheel, double-click to reset);
     numbers keep updating, click *Load new candles* to catch up.
-- **Training progress**: live while `train.py` runs — validation return, trades, reward, drawdown.
+- **Training progress**: live while `train.py` runs — one line per seed for validation return,
+  trades, reward, drawdown; seed comparison when done.
 - **Backtest**: equity vs buy & hold, trades on price, position over time.
 
 ### Paper trading
@@ -83,7 +93,7 @@ currently set in the config.
 ## Things to try next
 
 1. Compare 15m vs 1h (see above).
-2. More timesteps (1–5M) and several seeds — RL results vary a lot between seeds.
+2. More timesteps (1–5M).
 3. Walk-forward validation (train on months 1–12, test 13; slide forward).
 4. Reward shaping: penalize drawdown / volatility (Sharpe-style reward).
 5. Limit (maker) orders to pay 0.25% instead of 0.40%.

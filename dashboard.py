@@ -19,6 +19,8 @@ REPORT = Path(cfg["paths"]["report"])
 UP, DOWN = "#26a69a", "#ef5350"
 # scroll wheel zooms; double-click resets the view
 PLOT_CONFIG = {"scrollZoom": True, "displaylogo": False}
+SEED_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2",
+               "#17becf", "#bcbd22", "#7f7f7f"]
 
 st.title("📈 Trade_bot dashboard")
 st.caption(f"{cfg['symbol']} · {cfg['timeframe']} · trades on {cfg['exchange']} · "
@@ -48,18 +50,6 @@ def trade_markers(fig, buys, sells, row):
                                      marker=dict(symbol=sym, size=11, color=color,
                                                  line=dict(width=1, color="white")),
                                      text=d["hover"], hoverinfo="text"), row, 1)
-
-
-def line_chart(df, x, ys, title, yaxis, zero_line=False):
-    fig = go.Figure()
-    for col, name in ys:
-        fig.add_trace(go.Scatter(x=df[x], y=df[col], name=name, mode="lines+markers"))
-    if zero_line:
-        fig.add_hline(y=0, line_dash="dash", line_color="gray")
-    fig.update_layout(title=title, yaxis_title=yaxis, xaxis_title=x, height=320,
-                      margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation="h"),
-                      uirevision=title)  # keeps your zoom when the chart refreshes
-    return fig
 
 
 # ---------------- Live paper trading (auto-refreshing) ----------------
@@ -164,47 +154,103 @@ with tab_live:
 
 
 # ---------------- Training progress (auto-refreshing) ----------------
+def seed_chart(df, col, title, yaxis, zero_line=False, best=None):
+    """One line per seed; the chosen/best seed drawn thicker."""
+    fig = go.Figure()
+    for i, (seed, d) in enumerate(df.groupby("seed")):
+        thick = best is not None and seed == best
+        color = SEED_COLORS[i % len(SEED_COLORS)]
+        fig.add_trace(go.Scatter(x=d["timesteps"], y=d[col], name=f"seed {seed}" + (" ★" if thick else ""),
+                                 mode="lines+markers", opacity=1 if thick else 0.7,
+                                 line=dict(width=3.5 if thick else 1.5, color=color),
+                                 marker=dict(size=7 if thick else 4, color=color)))
+    if zero_line:
+        fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    fig.update_layout(title=title, yaxis_title=yaxis, height=320,
+                      margin=dict(l=10, r=10, t=40, b=10),
+                      legend=dict(orientation="h", y=1.0, x=1, xanchor="right", yanchor="bottom"),
+                      uirevision=title)  # keeps your zoom when the chart refreshes
+    return fig
+
+
 with tab_train:
     @st.fragment(run_every="5s")
     def training_section():
-        log = REPORT / "training_log.csv"
-        if not log.exists():
-            st.info("No training log yet. Run `python train.py` — this page updates live.")
+        logs = sorted(REPORT.glob("training_log_seed*.csv"), key=lambda f: f.stat().st_mtime)
+        frames = [d for d in (pd.read_csv(f) for f in logs) if not d.empty]
+        if not frames:
+            st.info("No training yet. Run `python train.py` — this page updates live."
+                    if not logs else "Training started, waiting for the first validation checkpoint…")
             return
-        df = pd.read_csv(log)
-        if df.empty:
-            st.info("Training started, waiting for the first validation checkpoint…")
-            return
+        df = pd.concat(frames, ignore_index=True)
+        run_f, sum_f = REPORT / "train_run.json", REPORT / "seeds_summary.csv"
+        run = (json.loads(run_f.read_text()) if run_f.exists()
+               else {"seeds": sorted(df["seed"].unique()), "timesteps": cfg["train"]["total_timesteps"]})
+        seeds, target = run["seeds"], run["timesteps"]
+        finished = sum_f.exists()
 
-        last, best = df.iloc[-1], df.loc[df["val_return_%"].idxmax()]
-        target = cfg["train"]["total_timesteps"]
-        st.progress(min(1.0, last["timesteps"] / target),
-                    text=f"{int(last['timesteps']):,} / {target:,} timesteps "
-                         f"· {last['elapsed_s']/60:.1f} min elapsed")
+        cur_seed = int(frames[-1]["seed"].iloc[0])           # most recently written log
+        cur = df[df["seed"] == cur_seed]
+        steps_done = sum(min(int(df.loc[df["seed"] == s, "timesteps"].max()), target)
+                         for s in df["seed"].unique())
+        overall = min(1.0, steps_done / (target * len(seeds)))
+        k = seeds.index(cur_seed) + 1 if cur_seed in seeds else len(df["seed"].unique())
+        st.progress(overall, text="✅ Training finished" if finished else
+                    f"Seed {k}/{len(seeds)} (seed {cur_seed}) · "
+                    f"{int(cur['timesteps'].iloc[-1]):,} / {target:,} steps · "
+                    f"overall {overall * 100:.0f}% · {cur['elapsed_s'].iloc[-1] / 60:.1f} min on this seed")
 
+        best_per_seed = df.loc[df.groupby("seed")["val_return_%"].idxmax()]
+        top = best_per_seed.loc[best_per_seed["val_return_%"].idxmax()]
+        last = cur.iloc[-1]
         c = st.columns(4)
-        c[0].metric("Latest val return", f"{last['val_return_%']:+.2f}%",
-                    f"{last['val_return_%'] - df['val_return_%'].iloc[-2]:+.2f}" if len(df) > 1 else None)
-        c[1].metric("Best val return (saved)", f"{best['val_return_%']:+.2f}%",
-                    f"at {int(best['timesteps']):,} steps", delta_color="off")
-        c[2].metric("Val trades", int(last["val_trades"]),
-                    f"{int(last['val_trades'] - df['val_trades'].iloc[-2]):+d}" if len(df) > 1 else None,
+        c[0].metric(f"Latest val return (seed {cur_seed})", f"{last['val_return_%']:+.2f}%",
+                    f"{last['val_return_%'] - cur['val_return_%'].iloc[-2]:+.2f}" if len(cur) > 1 else None)
+        c[1].metric("Best so far (all seeds)", f"{top['val_return_%']:+.2f}%",
+                    f"seed {int(top['seed'])} at {int(top['timesteps']):,} steps", delta_color="off")
+        c[2].metric(f"Val trades (seed {cur_seed})", int(last["val_trades"]),
+                    f"{int(last['val_trades'] - cur['val_trades'].iloc[-2]):+d}" if len(cur) > 1 else None,
                     delta_color="inverse")
-        c[3].metric("Val Sharpe", f"{last['val_sharpe']:.2f}")
+        if len(best_per_seed) > 1:
+            r = best_per_seed["val_return_%"]
+            agree = "✅ consistent" if r.std() <= max(2.0, abs(r.mean())) else "⚠️ mostly luck"
+            c[3].metric("Seeds agree?", agree, f"spread ±{r.std():.1f}% around {r.mean():+.1f}%",
+                        delta_color="off",
+                        help="If different random seeds give very different results, the 'best' one "
+                             "probably just got lucky on the validation period.")
+        else:
+            c[3].metric("Val Sharpe", f"{last['val_sharpe']:.2f}")
 
-        charts = [
-            (df, "timesteps", [("val_return_%", "val return %")], "Validation return", "%", True),
-            (df, "timesteps", [("val_trades", "trades")],
-             "Trades on validation (fewer = less fee drag)", "trades", False),
-            (df, "timesteps", [("train_ep_reward", "mean episode reward")], "Training reward",
-             "reward", True),
-            (df, "timesteps", [("val_max_drawdown_%", "max drawdown %")],
-             "Validation max drawdown", "%", False),
-        ]
+        best_seed = int(top["seed"])
+        charts = [("val_return_%", "Validation return", "%", True),
+                  ("val_trades", "Trades on validation (fewer = less fee drag)", "trades", False),
+                  ("train_ep_reward", "Training reward", "reward", True),
+                  ("val_max_drawdown_%", "Validation max drawdown", "%", False)]
         cols = st.columns(2) + st.columns(2)
-        for i, (col, args) in enumerate(zip(cols, charts)):
-            col.plotly_chart(line_chart(*args), width="stretch", key=f"train_chart_{i}",
-                             config=PLOT_CONFIG)
+        for i, (col, (y, title, unit, zero)) in enumerate(zip(cols, charts)):
+            col.plotly_chart(seed_chart(df, y, title, unit, zero, best_seed), width="stretch",
+                             key=f"train_chart_{i}", config=PLOT_CONFIG)
+        st.caption("x-axis = training steps. Each line is one agent trained with a different "
+                   "random seed. Thick line ★ = best seed so far.")
+
+        if finished:
+            summ = pd.read_csv(sum_f)
+            st.subheader("Seed comparison")
+            chosen = int(summ.loc[summ["chosen"], "seed"].iloc[0])
+            st.markdown(f"Best checkpoint of each seed on validation. **Seed {chosen}** was "
+                        "chosen and copied to the main model used by `backtest.py` and "
+                        "`paper_trade.py`.")
+            bar = go.Figure(go.Bar(x=[f"seed {s}" for s in summ["seed"]], y=summ["val_return_%"],
+                                   marker_color=["#1f77b4" if ch else "#aec7e8" for ch in summ["chosen"]],
+                                   text=summ["val_return_%"].map("{:+.2f}%".format), textposition="outside"))
+            bar.add_hline(y=summ["val_return_%"].mean(), line_dash="dot", line_color="gray",
+                          annotation_text="mean")
+            bar.update_layout(height=300, yaxis_title="best val return %",
+                              margin=dict(l=10, r=10, t=30, b=10), uirevision="seeds")
+            l, r = st.columns([2, 3])
+            l.plotly_chart(bar, width="stretch", key="seed_bar", config=PLOT_CONFIG)
+            r.dataframe(summ, width="stretch", hide_index=True)
+
         with st.expander("Raw log"):
             st.dataframe(df, width="stretch", hide_index=True)
 
