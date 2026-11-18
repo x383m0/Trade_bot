@@ -1,7 +1,8 @@
 """Download OHLCV candles with ccxt and save to parquet.
 
-Usage: python -m data.fetch [--synthetic]
-Downloads from `data_exchange` in config.yaml (Coinbase by default: years of public history).
+Usage: python -m data.fetch [--synthetic] [--symbol ETH/USD]
+Downloads every coin in `train_symbols` (config.yaml) from `data_exchange`
+(Coinbase by default: years of public history). --symbol downloads just one.
 --synthetic generates fake random-walk data (for testing the pipeline offline).
 """
 import argparse
@@ -11,13 +12,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from common import load_config
+from common import data_path, load_config
 
 # max candles per request for exchanges that cap it
 LIMITS = {"coinbase": 300, "kraken": 720, "bitstamp": 1000, "ndax": 1000}
 
 
-def fetch_ohlcv(cfg):
+def fetch_ohlcv(cfg, symbol):
     import ccxt
 
     name = cfg["data_exchange"]
@@ -31,13 +32,13 @@ def fetch_ohlcv(cfg):
     since = now - int(cfg["years"] * 365 * 24 * 3600 * 1000)
     rows = []
     while since < now:
-        batch = ex.fetch_ohlcv(cfg["symbol"], cfg["timeframe"], since=since, limit=limit)
+        batch = ex.fetch_ohlcv(symbol, cfg["timeframe"], since=since, limit=limit)
         if batch:
             rows += batch
             since = batch[-1][0] + tf_ms
         else:  # gap with no data - skip ahead
             since += limit * tf_ms
-        print(f"\rfetched {len(rows)} candles "
+        print(f"\r{symbol}: fetched {len(rows)} candles "
               f"(up to {pd.to_datetime(since, unit='ms'):%Y-%m-%d})", end="")
     print()
     df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
@@ -45,12 +46,12 @@ def fetch_ohlcv(cfg):
     return df.drop_duplicates("ts").sort_values("ts").reset_index(drop=True)
 
 
-def synthetic_ohlcv(n=60000, seed=0, freq="15min"):
+def synthetic_ohlcv(n=60000, seed=0, freq="15min", vol_mult=1.0, price0=30000):
     """Random walk with volatility clustering. NO real edge - pipeline testing only."""
     rng = np.random.default_rng(seed)
-    vol = 0.002 * np.exp(0.5 * np.cumsum(rng.normal(0, 0.05, n)) / np.sqrt(np.arange(1, n + 1)))
+    vol = 0.002 * vol_mult * np.exp(0.5 * np.cumsum(rng.normal(0, 0.05, n)) / np.sqrt(np.arange(1, n + 1)))
     ret = rng.normal(0, 1, n) * vol
-    close = 30000 * np.exp(np.cumsum(ret))
+    close = price0 * np.exp(np.cumsum(ret))
     open_ = np.concatenate([[close[0]], close[:-1]])
     spread = np.abs(rng.normal(0, vol)) * close
     high = np.maximum(open_, close) + spread
@@ -64,18 +65,26 @@ def synthetic_ohlcv(n=60000, seed=0, freq="15min"):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--synthetic", action="store_true")
+    p.add_argument("--synthetic", action="store_true", help="fake random-walk data (offline testing)")
+    p.add_argument("--symbol", help="download only this coin (default: all train_symbols)")
     args = p.parse_args()
     cfg = load_config()
-    if args.synthetic:
-        tf = cfg["timeframe"]
-        df = synthetic_ohlcv(freq=tf[:-1] + {"m": "min", "h": "h", "d": "D"}[tf[-1]])
-    else:
-        df = fetch_ohlcv(cfg)
-    out = Path(cfg["paths"]["data"])
-    out.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out)
-    print(f"saved {len(df)} rows -> {out}{'  (SYNTHETIC)' if args.synthetic else ''}")
+    symbols = [args.symbol] if args.symbol else cfg["train_symbols"]
+    tf = cfg["timeframe"]
+    for i, sym in enumerate(symbols):
+        if args.synthetic:
+            df = synthetic_ohlcv(seed=i, freq=tf[:-1] + {"m": "min", "h": "h", "d": "D"}[tf[-1]],
+                                 vol_mult=1 + 0.4 * i, price0=30000 / (10 ** i))
+        else:
+            try:
+                df = fetch_ohlcv(cfg, sym)
+            except Exception as e:  # one coin failing shouldn't stop the others
+                print(f"\n{sym}: download failed ({type(e).__name__}: {e})")
+                continue
+        out = Path(data_path(cfg, sym))
+        out.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(out)
+        print(f"saved {len(df)} rows -> {out}{'  (SYNTHETIC)' if args.synthetic else ''}")
 
 
 if __name__ == "__main__":

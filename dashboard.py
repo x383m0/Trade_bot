@@ -234,7 +234,24 @@ with tab_train:
             col.plotly_chart(seed_chart(df, y, title, unit, zero, best_seed), width="stretch",
                              key=f"train_chart_{i}", config=PLOT_CONFIG)
         st.caption("x-axis = training steps. Each line is one agent trained with a different "
-                   "random seed. Thick line ★ = best seed so far.")
+                   "random seed. Thick line ★ = best seed so far."
+                   + (" Validation numbers are averaged over all coins." if
+                      any(c.startswith("val_ret_") for c in df.columns) else ""))
+
+        coin_cols = [c for c in df.columns if c.startswith("val_ret_")]
+        if len(coin_cols) > 1:
+            d = df[df["seed"] == best_seed]
+            fig = go.Figure()
+            for i, col in enumerate(coin_cols):
+                fig.add_trace(go.Scatter(x=d["timesteps"], y=d[col], name=col[8:], mode="lines+markers",
+                                         line=dict(color=SEED_COLORS[(i + 5) % len(SEED_COLORS)])))
+            fig.add_hline(y=0, line_dash="dash", line_color="gray")
+            fig.update_layout(title=f"Validation return per coin (seed {best_seed} ★)", yaxis_title="%",
+                              height=300, margin=dict(l=10, r=10, t=40, b=10), uirevision="coins",
+                              legend=dict(orientation="h", y=1.0, x=1, xanchor="right", yanchor="bottom"))
+            st.plotly_chart(fig, width="stretch", key="coin_chart", config=PLOT_CONFIG)
+            st.caption("If it only works on one coin, it probably memorized that coin. "
+                       "A real pattern should help on all of them.")
 
         if finished:
             summ = pd.read_csv(sum_f)
@@ -308,6 +325,8 @@ with tab_bt:
         mk_f = REPORT / f"monkey_{split}.json"
         mk = json.loads(mk_f.read_text()) if mk_f.exists() else None
         label = mk["agent_label"] if mk else "PPO agent"
+        if mk and mk.get("symbol"):
+            st.caption(f"Coin tested: **{mk['symbol']}** (`python backtest.py --symbol ETH/USD` to test another)")
         st.dataframe(mt.rename(index={"PPO agent": f"▶ {label}"}), width="stretch")
         st.caption(f"Time in market: {eq['position'].mean()*100:.1f}% of bars. "
                    "Rows 'seed …' = each trained agent on its own; a big spread between them "
@@ -328,10 +347,11 @@ with tab_bt:
                 c[2].metric("Typical monkey", f"{mk['monkey_median_%']:+.2f}%",
                             f"90% between {mk['monkey_p5_%']:+.2f}% and {mk['monkey_p95_%']:+.2f}%",
                             delta_color="off")
-                st.caption(f"{mk['runs']} random traders each made the same {mk['trades']} trades "
-                           "as the agent, at random times, paying the same fees. If the agent's "
-                           "timing were no better than chance, it would land in the middle of the "
-                           "pack. Aim for 95%+.")
+                st.caption(f"{mk['runs']} random traders each copied the agent's holding periods "
+                           f"exactly ({mk['trades']} trades, same time in the market) but placed them "
+                           "at random times, paying the same fees. So only the TIMING differs. If "
+                           "the agent's timing were no better than chance, it would land in the "
+                           "middle of the pack. Aim for 95%+.")
                 mf = REPORT / f"monkeys_{split}.csv"
                 if mf.exists():
                     mon = pd.read_csv(mf)["return_%"]

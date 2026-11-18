@@ -18,9 +18,10 @@ from pathlib import Path
 import pandas as pd
 
 from agents import load_agent
-from common import live_observation, load_config, load_norm
+import numpy as np
 
-HISTORY_BARS = 300  # longest rolling feature is 96 bars + 32-bar window -> 300 is plenty
+from common import live_observation, load_config, load_norm, required_history
+
 
 
 def fmt_ts(ts_ms):
@@ -65,6 +66,7 @@ class PaperAccount:
         """bar = the candle just closed (ts, open, high, low, close); trade happens at bid/ask now."""
         bar_ts = int(bar["ts"])
         s, mid = self.s, (bid + ask) / 2
+        pos_before = s["pos"]
         if s["start_price"] is None:
             s["start_price"] = ask
         t = fmt_ts(bar_ts)
@@ -87,6 +89,13 @@ class PaperAccount:
         ohlc = [round(float(bar[k]), 2) for k in ("open", "high", "low", "close")]
         self._append(self.eq_f, [t, *ohlc, round(mid, 2), round(self.equity(mid), 4),
                                  round(bh, 4), s["pos"], action])
+        # position context the agent sees next bar (same bookkeeping as the training env)
+        if s["pos"]:
+            s["held"] = s.get("held", 0) + 1 if pos_before else 1
+            if not pos_before:
+                s["entry_ref"] = float(bar["close"])
+        else:
+            s["held"], s["entry_ref"] = 0, None
         s["last_bar_ts"] = int(bar_ts)
         s["votes"] = votes  # ensemble agreement, e.g. "2/3 long" (shown on the dashboard)
         self.state_f.write_text(json.dumps(s, indent=1))
@@ -96,8 +105,11 @@ class PaperAccount:
         return self.s["cash"] + self.s["btc"] * price
 
 
-def decide(model, norm, window, bars, pos):
-    obs = live_observation(bars, norm, window, pos)
+def decide(model, norm, cfg, bars, acct):
+    s = acct.s
+    upnl = np.log(float(bars["close"].iloc[-1]) / s["entry_ref"]) if s["pos"] and s.get("entry_ref") else 0.0
+    obs = live_observation(bars, norm, cfg["symbol"], cfg["train"]["window"], s["pos"],
+                           upnl, s.get("held", 0))
     if obs is None:
         return None
     action, _ = model.predict(obs, deterministic=True)
@@ -119,11 +131,12 @@ def run_replay(cfg, model, norm, acct, delay, max_bars):
         start = max(start, int(df.index[df["ts"] == acct.s["last_bar_ts"]][0]) + 1)
     end = len(df) if max_bars is None else min(len(df), start + max_bars)
     slip = cfg["slippage"]
+    hist = required_history(cfg)
     print(f"replaying {end - start} bars of {cfg['timeframe']} "
           f"({fmt_ts(df['ts'].iloc[start])} -> {fmt_ts(df['ts'].iloc[end - 1])})")
     for i in range(start, end):
-        bars = df.iloc[max(0, i - HISTORY_BARS + 1): i + 1]
-        action = decide(model, norm, cfg["train"]["window"], bars, acct.s["pos"])
+        bars = df.iloc[max(0, i - hist + 1): i + 1]
+        action = decide(model, norm, cfg, bars, acct)
         if action is None:
             continue
         price = df["close"].iloc[i]
@@ -138,16 +151,20 @@ def run_live(cfg, model, norm, acct):
 
     ex = getattr(ccxt, cfg["exchange"])({"enableRateLimit": True})
     tf_ms = ex.parse_timeframe(cfg["timeframe"]) * 1000
+    hist = required_history(cfg)
+    if cfg["exchange"] == "kraken" and hist > 720:
+        print(f"WARNING: features need {hist} candles but Kraken only returns 720 - "
+              "use a bigger timeframe (15m or 1h).")
     print(f"paper trading {cfg['symbol']} on {cfg['exchange']} ({cfg['timeframe']} bars) "
           f"- Ctrl+C to stop")
     while True:
         try:
-            raw = ex.fetch_ohlcv(cfg["symbol"], cfg["timeframe"], limit=HISTORY_BARS)
+            raw = ex.fetch_ohlcv(cfg["symbol"], cfg["timeframe"], limit=hist)
             bars = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume"])
-            bars = bars[bars["ts"] + tf_ms <= ex.milliseconds()].tail(HISTORY_BARS)  # closed bars only
+            bars = bars[bars["ts"] + tf_ms <= ex.milliseconds()].tail(hist)  # closed bars only
             bar_ts = int(bars["ts"].iloc[-1])
             if bar_ts != acct.s["last_bar_ts"]:
-                action = decide(model, norm, cfg["train"]["window"], bars, acct.s["pos"])
+                action = decide(model, norm, cfg, bars, acct)
                 if action is None:
                     print("not enough history yet, waiting...")
                 else:

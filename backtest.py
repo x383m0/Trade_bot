@@ -1,11 +1,12 @@
 """Evaluate the trained agent on held-out data vs. baselines, each seed, and random "monkeys".
 
-Usage: python backtest.py [--split val|test]
+Usage: python backtest.py [--split val|test] [--symbol ETH/USD]
+--symbol tests on another coin from train_symbols (default: the coin you trade).
 Run on the test split only once you're done tuning - otherwise it stops being "unseen".
 
-Monkey test: 1000 random traders make the SAME number of trades as the agent, at random
-times, with the same fees. If the agent doesn't beat ~95% of them, its timing is
-probably no better than chance.
+Monkey test: 1000 random traders copy the agent's holding periods exactly (same trades, same
+time in the market) but at random times, with the same fees. If the agent doesn't beat ~95%
+of them, its timing is probably no better than chance.
 """
 import argparse
 import json
@@ -22,31 +23,47 @@ from common import load_config, load_splits, make_env, metrics
 from train import run_episode
 
 
-def monkey_returns(close, n_trades, cost, runs, seed=0):
-    """Final returns (%) of `runs` random long/flat traders with exactly `n_trades` position
-    changes at random bars, starting flat. Same accounting as the env:
-    net_t = log(close[t+1]/close[t]) * pos_t - |pos_t - pos_{t-1}| * cost."""
+def monkey_returns(close, positions, cost, runs, seed=0):
+    """Final returns (%) of `runs` random traders that copy the agent's EXACT holding periods
+    (same number of trades, same time in the market, same trade lengths) but place them at
+    random times. So the only thing that differs from the agent is the TIMING.
+    Same accounting as the env: net_t = log(close[t+1]/close[t]) * pos_t - trades * cost."""
     rng = np.random.default_rng(seed)
-    logret = np.log(close[1:] / close[:-1])          # one per decision bar
-    n = len(logret)
-    k = min(n_trades, n)
-    if k == 0:
-        return np.zeros(runs)
+    logret = np.log(close[1:] / close[:-1])[:len(positions)]
+    pos = np.asarray(positions, dtype=np.int8)
+    if len(pos) == 0 or pos.min() == pos.max():        # never traded, or never got out
+        return np.full(runs, (np.exp((logret * pos).sum() - (pos[:1].sum() * cost)) - 1) * 100)
+    # split into runs of identical position: e.g. flat 40 bars, long 12, flat 7, long 30...
+    edges = np.flatnonzero(np.diff(pos)) + 1
+    lengths = np.diff(np.concatenate([[0], edges, [len(pos)]]))
+    values = pos[np.concatenate([[0], edges])]
+    long_runs, flat_runs = lengths[values == 1], lengths[values == 0]
+    n_trades = len(edges) + int(pos[0] == 1)            # env starts flat
     out = np.empty(runs)
     for r in range(runs):
-        flips = np.zeros(n, dtype=np.int8)
-        flips[rng.choice(n, size=k, replace=False)] = 1
-        pos = np.cumsum(flips) % 2                   # each flip toggles flat <-> long
-        out[r] = (np.exp((logret * pos).sum() - k * cost) - 1) * 100
+        lr, fr = rng.permutation(long_runs), rng.permutation(flat_runs)
+        seq, li, fi = [], 0, 0
+        for v in values:                                # keep the long/flat alternation
+            if v:
+                seq.append(np.ones(lr[li], np.int8)); li += 1
+            else:
+                seq.append(np.zeros(fr[fi], np.int8)); fi += 1
+        p = np.concatenate(seq)
+        out[r] = (np.exp((logret * p).sum() - n_trades * cost) - 1) * 100
     return out
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--split", default="test", choices=["val", "test"])
+    p.add_argument("--symbol", default=None, help="coin to test on (default: config symbol)")
     args = p.parse_args()
     cfg = load_config()
-    df, feats = load_splits(cfg)[0][args.split]
+    sym = args.symbol or cfg["symbol"]
+    splits = load_splits(cfg)[0]
+    if sym not in splits:
+        raise SystemExit(f"{sym} has no data - add it to train_symbols and run python -m data.fetch")
+    df, feats = splits[sym][args.split]
     tf = cfg["timeframe"]
     cost = cfg["fee"] + cfg["slippage"]
 
@@ -69,19 +86,20 @@ def main():
 
     # --- monkey test ---
     runs = cfg.get("monkey_runs", 1000)
-    monkeys = monkey_returns(close, trades, cost, runs)
+    monkeys = monkey_returns(close, positions, cost, runs)
     agent_ret = (agent_eq[-1] - 1) * 100
     beats = float((agent_ret > monkeys).mean() * 100)
-    monkey = {"agent_label": agent_label, "agent_return_%": round(agent_ret, 3),
+    monkey = {"agent_label": agent_label, "symbol": sym, "agent_return_%": round(agent_ret, 3),
               "trades": int(trades), "runs": runs, "beats_%": round(beats, 1),
               "monkey_median_%": round(float(np.median(monkeys)), 3),
               "monkey_p5_%": round(float(np.percentile(monkeys, 5)), 3),
               "monkey_p95_%": round(float(np.percentile(monkeys, 95)), 3)}
 
-    print(f"\n{args.split.upper()} split: {len(agent_eq)} bars of {tf}   "
+    print(f"\n{sym} {args.split.upper()} split: {len(agent_eq)} bars of {tf}   "
           f"(row 'PPO agent' = {agent_label})\n")
     print(table.to_string())
-    print(f"\nMonkey test: {runs} random traders with the same {trades} trades")
+    print(f"\nMonkey test: {runs} random traders with the same {trades} trades and "
+          f"{positions.mean() * 100:.0f}% time in market, at random times")
     if trades == 0:
         print("  agent made no trades - nothing to compare (it's the same as 'Do nothing').")
     else:
@@ -109,7 +127,7 @@ def main():
     plt.plot(ts, agent_eq, label=agent_label)
     plt.plot(ts, bh_eq, label="Buy & hold", alpha=0.7)
     plt.plot(ts, flat_eq, label="Do nothing", ls="--", c="gray")
-    plt.title(f"{cfg['symbol']} {tf} - {args.split} split (fees + slippage included)")
+    plt.title(f"{sym} {tf} - {args.split} split (fees + slippage included)")
     plt.ylabel("equity (start = 1.0)")
     plt.legend()
     plt.tight_layout()

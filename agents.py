@@ -11,6 +11,8 @@ from pathlib import Path
 import numpy as np
 from stable_baselines3 import PPO
 
+from env.trading_env import POS_INDEX
+
 
 def ensemble_path(cfg):
     return cfg["paths"]["model"] + "_ensemble.json"
@@ -24,7 +26,7 @@ class Ensemble:
     def predict(self, obs, deterministic=True):
         votes = np.array([int(m.predict(obs, deterministic=deterministic)[0]) for m in self.models])
         self.last_votes = votes
-        pos = int(round(float(obs[-1])))        # current position is the last obs value
+        pos = int(round(float(obs[POS_INDEX])))  # current position, from the observation
         share_long = votes.mean()
         if pos == 0 and share_long > self.min_agree:
             action = 1

@@ -2,7 +2,10 @@
 
 A PPO agent (Stable-Baselines3) that learns to go **long or flat** on BTC/USD
 using **15-minute** candles, with Kraken's fees included in training.
-Trains on Coinbase history, paper-trades on live Kraken prices (both available in Canada).
+Learns from BTC, ETH and SOL history (Coinbase), paper-trades BTC on live Kraken prices
+(both available in Canada).
+
+👉 **[COMMANDS.md](COMMANDS.md)**: every command and setting, plus experiments to try.
 
 > Learning project. Expect break-even or small losses. Never risk money you can't lose.
 
@@ -17,7 +20,7 @@ pip install -r requirements.txt
 ## Workflow
 
 ```bash
-python -m data.fetch              # download ~2 years of BTC/USD candles from Coinbase
+python -m data.fetch              # download ~2 years of BTC, ETH, SOL candles from Coinbase
 python train.py                   # train 3 agents (seeds), keep the best one on the validation split
 python backtest.py --split val    # compare vs buy & hold / do nothing
 python paper_trade.py --replay    # watch it "trade" the held-out period bar by bar (fast demo)
@@ -26,6 +29,26 @@ streamlit run dashboard.py        # dashboard at http://localhost:8501 (run in a
 ```
 
 `python backtest.py --split test` only once you're done tuning — the test set is your "unseen future".
+
+### What the agent sees
+
+Every candle it gets the last `window` candles of these features (all ratios/returns, never raw
+prices, so they work on any coin and any year), each in hours so they work on any timeframe:
+
+- **Momentum**: price change over 1 candle, 1h, 4h, 1 day, 4 days
+- **Volatility**: 4h and 1-day volatility, and whether it's calmer or wilder than usual
+- **Trend**: distance from the 1-day and 4-day average price
+- **Range**: where price sits between its recent low and high (1 day, 4 days), distance from the 4-day high
+- **Volume spikes**, **RSI**, **hour of day** and **day of week**
+- **Its own position**: holding or not, profit/loss of the open trade, how long it's been open
+
+### Learning from several coins
+
+`train_symbols` (BTC, ETH, SOL by default) are all used for training; the bot still trades only
+`symbol`. More variety forces it to learn patterns that work everywhere instead of memorizing
+BTC's history. All coins are split on the **same dates** (no peeking at BTC's test period through
+ETH), each coin is normalized with its own stats, and the best checkpoint is picked by the
+**average** validation return across coins. The Training tab shows each coin separately.
 
 ### Multiple seeds
 
@@ -46,8 +69,9 @@ The backtest table also shows each seed on its own so you can see the spread.
 
 ### Monkey test (skill or luck?)
 
-`backtest.py` compares the agent with 1000 random traders that make the **same number of
-trades** at random times with the same fees. If the agent doesn't beat ~95% of them, its timing
+`backtest.py` compares the agent with 1000 random traders that copy its **exact holding
+periods** (same trades, same time in the market) but place them at random times, with the same
+fees, so only the timing differs. If the agent doesn't beat ~95% of them, its timing
 is probably no better than chance. Shown in the terminal and in the dashboard's Backtest tab.
 
 ### Dashboard tabs
@@ -78,8 +102,8 @@ Offline / pipeline test: `python -m data.fetch --synthetic` generates a random w
 |---|---|
 | `config.yaml` | exchanges, symbol, timeframe, fees, split, training & paper settings |
 | `data/fetch.py` | downloads OHLCV via `ccxt` from `data_exchange` |
-| `env/features.py` | stationary features: returns, volatility, RSI, volume ratio, MA distance, time of day |
-| `env/trading_env.py` | Gymnasium env: action 0 = flat, 1 = long; reward = net log-return − costs |
+| `env/features.py` | multi-horizon features: momentum (1h-4d), volatility regime, trend, range position, volume spikes, RSI, time |
+| `env/trading_env.py` | Gymnasium env (one or several coins): action 0 = flat, 1 = long; sees position P&L and holding time |
 | `common.py` | config, chronological split, train-only normalization, live observation, metrics |
 | `train.py` | PPO training with validation checkpointing (+ saves normalization stats) |
 | `backtest.py` | metrics vs baselines, each seed, and the monkey test |

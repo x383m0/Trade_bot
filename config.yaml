@@ -1,34 +1,52 @@
+# ============================================================================
+#  Trade_bot settings. After changing something marked (re-fetch) or (retrain),
+#  rerun those steps. See COMMANDS.md for what to run.
+# ============================================================================
+
+# --- market ---
 exchange: kraken          # where the bot trades (live/paper prices). Available in Canada.
 data_exchange: coinbase   # where training history comes from (Kraken's API only returns ~720 candles)
-symbol: BTC/USD
-timeframe: 15m            # to compare: 1h (and raise `years` to ~8 for the same amount of bars)
-years: 2                  # history to download
+symbol: BTC/USD           # the coin the bot TRADES                                   (re-fetch, retrain)
+train_symbols:            # coins it LEARNS from - more variety = less memorizing     (re-fetch, retrain)
+  - BTC/USD
+  - ETH/USD
+  - SOL/USD
+timeframe: 15m            # candle size: 5m / 15m / 1h. For 1h set years ~8           (re-fetch, retrain)
+years: 2                  # history to download                                       (re-fetch, retrain)
 
-fee: 0.004                # Kraken taker (market order) fee per side, lowest volume tier
-slippage: 0.0005          # 0.05% per side
-trade_penalty: 0.0002     # extra reward penalty per position change (discourages over-trading)
+# --- costs (what Kraken charges) ---
+fee: 0.004                # 0.40% per side = taker (market order) fee, lowest tier    (retrain)
+slippage: 0.0005          # 0.05% per side - price moving against you while filling   (retrain)
+trade_penalty: 0.0002     # extra training penalty per trade -> discourages over-trading (retrain)
 
-split:                    # chronological, never shuffled
-  train: 0.70
-  val: 0.15
-  test: 0.15
+# --- data split (chronological, never shuffled) ---
+split:
+  train: 0.70             # agent learns from this
+  val: 0.15               # "pop quiz": picks the best checkpoint
+  test: 0.15              # "final exam": only look at it when you're done tuning
 
+# --- training ---
 train:
   algo: PPO
-  total_timesteps: 500000
-  seed: 42               # first seed; extra seeds are 43, 44, ...
-  n_seeds: 3             # agents trained per run (python train.py --seeds N to override)
-  window: 32              # bars of history the agent sees
+  total_timesteps: 500000 # training steps per seed. More = longer, often better (1-3M)  (retrain)
+  seed: 42                # first seed; extra seeds are 43, 44, ...
+  n_seeds: 3              # agents trained per run (python train.py --seeds N to override)
+  window: 16              # candles of history the agent sees each decision            (retrain)
+  learning_rate: 0.0003   # how big each learning step is. Lower = slower but steadier  (retrain)
+  gamma: 0.99             # how far ahead it plans (0.99 ~ 100 bars, 0.999 ~ 1000)      (retrain)
+  ent_coef: 0.01          # exploration: higher = tries more random actions early       (retrain)
 
+# --- ensemble: all seeds vote every candle ---
 ensemble:
-  enabled: true           # all seeds vote; position only changes when a majority agrees
+  enabled: true           # false = use only the single best seed
   min_agree: 0.5          # share of agents that must agree to change position (strictly more than)
 
 monkey_runs: 1000         # random traders to compare against in backtest.py
 
+# --- paper trading ---
 paper:
-  starting_cash: 20       # fake USD for paper trading
-  replay_delay: 0.1       # seconds per bar in --replay mode
+  starting_cash: 20       # fake USD
+  replay_delay: 0.1       # seconds per candle in --replay mode
 
 # {pair}, {timeframe}, {exchange}, {data_exchange} are filled in from the settings above,
 # so 15m and 1h runs keep separate data, models and reports.
