@@ -76,6 +76,11 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 | `years` | 4 | History to download (use ~8 with `1h`) | fetch, train |
 | `fee` | 0.004 | Fee per trade (0.0025 = Kraken limit-order fee) | train |
 | `trade_penalty` | 0.0002 | Higher = bot trades less | train |
+| `orders.type` | market | `limit` = 0.25% maker fee instead of 0.45%, but orders can miss | train |
+| `rules.min_hold` | 0 | Candles it must hold before selling (4 on 15m = 1h, 4 on 1h = 4h) | train |
+| `rules.stop_loss` | 0.0 | Sell at market if the trade is down this much (0.05 = 5%) | train |
+| `reward.type` | profit | `excess` = scored on beating buy & hold, not raw profit | train |
+| `reward.drawdown_penalty` | 0.0 | Punish sinking below its peak (try 0.5–2) | train |
 | `train.total_timesteps` | 500000 | Training length per seed | train |
 | `train.n_seeds` | 3 | Agents per run | train |
 | `train.window` | 16 | Candles the agent looks back at | train |
@@ -89,6 +94,19 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 ## 6. Experiments to try
 
 Change one thing at a time, then compare `python backtest.py --split val` results.
+Save each result with its own name so you can compare later, e.g.
+`python backtest.py --split val | Tee-Object -FilePath run2_costs.txt`
+
+### Recommended plan (after the 15m verdict: fees + holding through crashes)
+
+| Run | Change in config.yaml | Then |
+|---|---|---|
+| 1. 1h baseline | `timeframe: 1h`, `years: 8` | fetch, train, backtest |
+| 2. + cost rules | `orders.type: limit`, `rules.min_hold: 4`, `rules.stop_loss: 0.05` | train, backtest |
+| 3. + smarter reward | `reward.type: excess`, `reward.drawdown_penalty: 1.0` | train, backtest |
+
+Keep the changes from the previous run each time. Each run's question: did it beat the previous
+one **against buy & hold**, with fewer trades and a smaller drawdown?
 
 **1h candles instead of 15m** (often better with Kraken's fees):
 ```yaml

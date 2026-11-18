@@ -34,7 +34,7 @@ def run_episode(model, env):
         action, _ = model.predict(obs, deterministic=True)
         obs, _, done, _, info = env.step(int(action))
         equity.append(info["equity"])
-        positions.append(int(action))
+        positions.append(int(info["pos"]))   # actual position (rules/unfilled orders can override)
     return np.array(equity), info["n_trades"], np.array(positions)
 
 

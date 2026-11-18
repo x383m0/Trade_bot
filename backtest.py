@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from agents import load_agent, load_seed_models
-from common import load_config, load_splits, make_env, metrics
+from common import load_config, load_splits, make_env, metrics, trade_cost, trade_rules
 from train import run_episode
 
 
@@ -65,14 +65,14 @@ def main():
         raise SystemExit(f"{sym} has no data - add it to train_symbols and run python -m data.fetch")
     df, feats = splits[sym][args.split]
     tf = cfg["timeframe"]
-    cost = cfg["fee"] + cfg["slippage"]
+    cost = trade_cost(cfg)
 
     agent = load_agent(cfg)
     agent_label = f"Ensemble ({len(agent)} seeds)" if len(agent) > 1 else "PPO agent"
     agent_eq, trades, positions = run_episode(agent, make_env(cfg, df, feats))
     start = cfg["train"]["window"] - 1
     close = df["close"].values[start:start + len(agent_eq)]
-    bh_eq = close / close[0] * (1 - cost)          # buy once, hold
+    bh_eq = close / close[0] * (1 - cfg["fee"] - cfg["slippage"])   # buy once at market, hold
     flat_eq = np.ones_like(agent_eq)               # do nothing
 
     rows = {"PPO agent": {**metrics(agent_eq, tf), "trades": trades}}
@@ -101,8 +101,11 @@ def main():
               "monkey_p5_%": round(float(np.percentile(monkeys, 5)), 3),
               "monkey_p95_%": round(float(np.percentile(monkeys, 95)), 3)}
 
+    tr = trade_rules(cfg)
     print(f"\n{sym} {args.split.upper()} split: {len(agent_eq)} bars of {tf}   "
-          f"(row 'PPO agent' = {agent_label})\n")
+          f"(row 'PPO agent' = {agent_label})")
+    print(f"rules: {tr['order_type']} orders, min_hold {tr['min_hold']}, stop_loss "
+          f"{tr['stop_loss'] * 100:.1f}%, cost per trade {cost * 100:.2f}%\n")
     print(table.to_string())
     print(f"\nMonkey test: {runs} random traders with the same {trades} trades and "
           f"{positions.mean() * 100:.0f}% time in market, at random times")

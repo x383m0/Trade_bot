@@ -123,15 +123,30 @@ def live_observation(bars: pd.DataFrame, norm, symbol, window, pos, upnl_log=0.0
     return np.clip(obs, -10, 10).astype(np.float32)
 
 
+def trade_rules(cfg):
+    """Order type, holding/stop rules and reward settings from config.yaml (all optional)."""
+    o, r, w = cfg.get("orders") or {}, cfg.get("rules") or {}, cfg.get("reward") or {}
+    return {"order_type": o.get("type", "market"), "maker_fee": float(o.get("maker_fee", 0.0025)),
+            "fill_margin": float(o.get("fill_margin", 0.0002)),
+            "min_hold": int(r.get("min_hold", 0) or 0), "stop_loss": float(r.get("stop_loss", 0) or 0),
+            "reward_type": w.get("type", "profit"),
+            "drawdown_penalty": float(w.get("drawdown_penalty", 0) or 0)}
+
+
+def trade_cost(cfg):
+    """Cost per position change: maker fee for limit orders, fee + slippage for market."""
+    tr = trade_rules(cfg)
+    return tr["maker_fee"] if tr["order_type"] == "limit" else cfg["fee"] + cfg["slippage"]
+
+
 def make_env(cfg, df, feats, episode_len=None, seed=None):
     """df/feats can be single DataFrames or lists of them (several coins)."""
-    if isinstance(df, (list, tuple)):
-        close, fv = [d["close"].values for d in df], [f.values for f in feats]
-    else:
-        close, fv = df["close"].values, feats.values
-    return TradingEnv(close, fv, window=cfg["train"]["window"], fee=cfg["fee"],
-                      slippage=cfg["slippage"], trade_penalty=cfg["trade_penalty"],
-                      episode_len=episode_len, seed=seed)
+    dfs, fs = (df, feats) if isinstance(df, (list, tuple)) else ([df], [feats])
+    return TradingEnv([d["close"].values for d in dfs], [f.values for f in fs],
+                      high=[d["high"].values for d in dfs], low=[d["low"].values for d in dfs],
+                      window=cfg["train"]["window"], fee=cfg["fee"], slippage=cfg["slippage"],
+                      trade_penalty=cfg["trade_penalty"], episode_len=episode_len, seed=seed,
+                      **trade_rules(cfg))
 
 
 def bars_per_year(timeframe):

@@ -50,6 +50,21 @@ BTC's history. All coins are split on the **same dates** (no peeking at BTC's te
 ETH), each coin is normalized with its own stats, and the best checkpoint is picked by the
 **average** validation return across coins. The Training tab shows each coin separately.
 
+### Trading rules and reward (config.yaml: `orders`, `rules`, `reward`)
+
+All off by default; they apply identically to training, backtests and paper trading.
+
+- **Limit orders** (`orders.type: limit`): pay Kraken's 0.25% maker fee instead of 0.40% + slippage.
+  The order sits at the candle's close and only fills if the next candle trades through it,
+  so the bot sometimes misses a move, just like in real life.
+- **Minimum holding time** (`rules.min_hold`): no selling for N candles after a buy, which kills
+  quick in-and-out trades that only pay fees.
+- **Stop-loss** (`rules.stop_loss`): sell at market if the open trade is down that much.
+- **Excess reward** (`reward.type: excess`): the agent is scored on beating buy & hold instead of
+  raw profit, so "just hold during a bull market" earns nothing and stepping aside in a crash pays.
+- **Drawdown penalty** (`reward.drawdown_penalty`): extra penalty whenever equity sinks further
+  below its peak.
+
 ### Multiple seeds
 
 RL results change a lot with the random seed: one run can look great purely by luck.

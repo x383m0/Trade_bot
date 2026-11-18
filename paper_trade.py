@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from agents import load_agent
 import numpy as np
 
-from common import live_observation, load_config, load_norm, required_history
-
+from agents import load_agent
+from common import live_observation, load_config, load_norm, required_history, trade_rules
+from env.trading_env import apply_rules, limit_filled
 
 
 def fmt_ts(ts_ms):
@@ -29,33 +29,46 @@ def fmt_ts(ts_ms):
 
 
 class PaperAccount:
-    """Fake-money spot account: all-in BTC (long) or all-in USD (flat)."""
+    """Fake-money spot account: all-in on the coin (long) or all-in cash (flat).
 
+    Follows the same rules as the training env (env/trading_env.py): market or limit orders,
+    minimum holding time and stop-loss. Each new closed candle:
+      1. begin_bar(): last candle's limit order fills if this candle traded through its price
+         (otherwise it's cancelled); holding time ticks up.
+      2. the agent decides, using position / open-trade P&L / holding time.
+      3. act(): rules are applied, then the order is placed (market = now, limit = next candle).
+    """
+
+    VERSION = 2
     EQ_FIELDS = ["time", "open", "high", "low", "close", "price", "equity", "buy_hold",
                  "position", "action"]
-    TR_FIELDS = ["time", "side", "price", "qty_btc", "fee_usd", "equity_after"]
+    TR_FIELDS = ["time", "side", "order", "price", "qty_btc", "fee_usd", "equity_after"]
 
-    def __init__(self, folder, starting_cash, fee, reset=False, symbol="BTC/USD"):
+    def __init__(self, folder, starting_cash, cfg, reset=False, symbol="BTC/USD"):
         self.dir = Path(folder)
         if reset and self.dir.exists():
             shutil.rmtree(self.dir)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.fee = fee
+        self.fee, self.rules = cfg["fee"], trade_rules(cfg)
         self.state_f = self.dir / "state.json"
         self.eq_f, self.tr_f = self.dir / "equity.csv", self.dir / "trades.csv"
-        if self.eq_f.exists() and self.eq_f.read_text().split("\n", 1)[0] != ",".join(self.EQ_FIELDS):
-            raise SystemExit("Log files are from an older version - rerun with --reset to start fresh.")
+        for f, fields in ((self.eq_f, self.EQ_FIELDS), (self.tr_f, self.TR_FIELDS)):
+            if f.exists() and f.read_text().split("\n", 1)[0] != ",".join(fields):
+                raise SystemExit("Log files are from an older version - rerun with --reset to start fresh.")
         self.base, self.cur = symbol.split("/")
         if self.state_f.exists():
             self.s = json.loads(self.state_f.read_text())
+            if self.s.get("v") != self.VERSION:
+                raise SystemExit("Paper account is from an older version - rerun with --reset.")
             if self.s.get("symbol", "BTC/USD") != symbol:
                 raise SystemExit(f"This paper account trades {self.s.get('symbol', 'BTC/USD')}, but the "
                                  f"config now says {symbol} - rerun with --reset to start fresh.")
             print(f"resuming: {self.s['cash']:.2f} {self.cur} cash + {self.s['btc']:.8f} {self.base}, "
                   f"{self.s['n_trades']} trades so far")
         else:
-            self.s = {"symbol": symbol, "currency": self.cur,
-                      "cash": float(starting_cash), "btc": 0.0, "pos": 0,
+            self.s = {"v": self.VERSION, "symbol": symbol, "currency": self.cur,
+                      "cash": float(starting_cash), "btc": 0.0, "pos": 0, "held": 0,
+                      "entry_ref": None, "pending": None,
                       "start_cash": float(starting_cash), "start_price": None,
                       "last_bar_ts": None, "n_trades": 0,
                       "started": datetime.now(timezone.utc).isoformat(timespec="seconds")}
@@ -67,41 +80,59 @@ class PaperAccount:
         with open(f, "a", newline="") as fh:
             csv.writer(fh).writerow(row)
 
-    def step(self, bar, action, bid, ask, votes=""):
-        """bar = the candle just closed (ts, open, high, low, close); trade happens at bid/ask now."""
-        bar_ts = int(bar["ts"])
-        s, mid = self.s, (bid + ask) / 2
-        pos_before = s["pos"]
+    def _trade(self, side, price, fee_rate, bar_ts, order, entry_ref=None):
+        s = self.s
+        if side == "BUY":
+            fee = s["cash"] * fee_rate
+            qty = (s["cash"] - fee) / price
+            s["btc"], s["cash"], s["pos"], s["held"], s["entry_ref"] = qty, 0.0, 1, 0, entry_ref
+        else:
+            qty = s["btc"]
+            gross = qty * price
+            fee = gross * fee_rate
+            s["cash"], s["btc"], s["pos"], s["held"], s["entry_ref"] = gross - fee, 0.0, 0, 0, None
+        s["n_trades"] += 1
+        self._append(self.tr_f, [fmt_ts(bar_ts), side, order, round(price, 2), round(qty, 8),
+                                 round(fee, 4), round(self.equity(price), 4)])
+
+    def begin_bar(self, bar):
+        if self.s.get("begun_ts") == int(bar["ts"]):
+            return   # already done for this candle (e.g. retry after a network error)
+        self.s["begun_ts"] = int(bar["ts"])
+        s, p = self.s, self.s.get("pending")
+        if p:
+            if limit_filled(p["side"] == "BUY", p["price"], float(bar["high"]), float(bar["low"]),
+                            self.rules["fill_margin"]):
+                self._trade(p["side"], p["price"], self.rules["maker_fee"], int(bar["ts"]), "limit",
+                            entry_ref=p["price"])
+            s["pending"] = None   # unfilled orders are cancelled; the agent decides again
+        if s["pos"]:
+            s["held"] += 1
+
+    def upnl(self, close):
+        s = self.s
+        return float(np.log(close / s["entry_ref"])) if s["pos"] and s.get("entry_ref") else 0.0
+
+    def act(self, bar, action, bid, ask, votes=""):
+        """Apply the rules to the agent's decision and place the order. Returns (equity, buy&hold)."""
+        s, mid, close, bar_ts = self.s, (bid + ask) / 2, float(bar["close"]), int(bar["ts"])
         if s["start_price"] is None:
             s["start_price"] = ask
-        t = fmt_ts(bar_ts)
-        if action == 1 and s["pos"] == 0:            # BUY with all cash, at the ask
-            fee_usd = s["cash"] * self.fee
-            qty = (s["cash"] - fee_usd) / ask
-            s["btc"], s["cash"], s["pos"] = qty, 0.0, 1
-            s["n_trades"] += 1
-            self._append(self.tr_f, [t, "BUY", round(ask, 2), round(qty, 8), round(fee_usd, 4),
-                                     round(self.equity(mid), 4)])
-        elif action == 0 and s["pos"] == 1:          # SELL all BTC, at the bid
-            gross = s["btc"] * bid
-            fee_usd = gross * self.fee
-            qty = s["btc"]
-            s["cash"], s["btc"], s["pos"] = gross - fee_usd, 0.0, 0
-            s["n_trades"] += 1
-            self._append(self.tr_f, [t, "SELL", round(bid, 2), round(qty, 8), round(fee_usd, 4),
-                                     round(self.equity(mid), 4)])
+        r = self.rules
+        final, forced = apply_rules(action, s["pos"], s["held"], self.upnl(close),
+                                    r["min_hold"], r["stop_loss"])
+        if final != s["pos"]:
+            side = "BUY" if final == 1 else "SELL"
+            if forced or r["order_type"] == "market":
+                self._trade(side, ask if side == "BUY" else bid, self.fee, bar_ts,
+                            "stop-loss" if forced else "market", entry_ref=close)
+            else:
+                s["pending"] = {"side": side, "price": close}   # limit order at this candle's close
         bh = s["start_cash"] * (1 - self.fee) * mid / s["start_price"]
         ohlc = [round(float(bar[k]), 2) for k in ("open", "high", "low", "close")]
-        self._append(self.eq_f, [t, *ohlc, round(mid, 2), round(self.equity(mid), 4),
+        self._append(self.eq_f, [fmt_ts(bar_ts), *ohlc, round(mid, 2), round(self.equity(mid), 4),
                                  round(bh, 4), s["pos"], action])
-        # position context the agent sees next bar (same bookkeeping as the training env)
-        if s["pos"]:
-            s["held"] = s.get("held", 0) + 1 if pos_before else 1
-            if not pos_before:
-                s["entry_ref"] = float(bar["close"])
-        else:
-            s["held"], s["entry_ref"] = 0, None
-        s["last_bar_ts"] = int(bar_ts)
+        s["last_bar_ts"] = bar_ts
         s["votes"] = votes  # ensemble agreement, e.g. "2/3 long" (shown on the dashboard)
         self.state_f.write_text(json.dumps(s, indent=1))
         return self.equity(mid), bh
@@ -112,9 +143,8 @@ class PaperAccount:
 
 def decide(model, norm, cfg, bars, acct):
     s = acct.s
-    upnl = np.log(float(bars["close"].iloc[-1]) / s["entry_ref"]) if s["pos"] and s.get("entry_ref") else 0.0
     obs = live_observation(bars, norm, cfg["symbol"], cfg["train"]["window"], s["pos"],
-                           upnl, s.get("held", 0))
+                           acct.upnl(float(bars["close"].iloc[-1])), s.get("held", 0))
     if obs is None:
         return None
     action, _ = model.predict(obs, deterministic=True)
@@ -141,12 +171,13 @@ def run_replay(cfg, model, norm, acct, delay, max_bars):
           f"({fmt_ts(df['ts'].iloc[start])} -> {fmt_ts(df['ts'].iloc[end - 1])})")
     for i in range(start, end):
         bars = df.iloc[max(0, i - hist + 1): i + 1]
+        acct.begin_bar(df.iloc[i])
         action = decide(model, norm, cfg, bars, acct)
         if action is None:
             continue
         price = df["close"].iloc[i]
-        eq, bh = acct.step(df.iloc[i], action, price * (1 - slip), price * (1 + slip),
-                           model.votes_str())
+        eq, bh = acct.act(df.iloc[i], action, price * (1 - slip), price * (1 + slip),
+                          model.votes_str())
         log_line(df["ts"].iloc[i], price, action, acct, eq, bh, model.votes_str())
         time.sleep(delay)
 
@@ -174,6 +205,7 @@ def run_live(cfg, model, norm, acct):
             bars = bars[bars["ts"] + tf_ms <= ex.milliseconds()].tail(hist)  # closed bars only
             bar_ts = int(bars["ts"].iloc[-1])
             if bar_ts != acct.s["last_bar_ts"]:
+                acct.begin_bar(bars.iloc[-1])
                 action = decide(model, norm, cfg, bars, acct)
                 if action is None:
                     print("not enough history yet, waiting...")
@@ -181,7 +213,7 @@ def run_live(cfg, model, norm, acct):
                     tk = ex.fetch_ticker(sym)
                     last = tk.get("last") or bars["close"].iloc[-1]
                     bid, ask = tk.get("bid") or last, tk.get("ask") or last
-                    eq, bh = acct.step(bars.iloc[-1], action, bid, ask, model.votes_str())
+                    eq, bh = acct.act(bars.iloc[-1], action, bid, ask, model.votes_str())
                     log_line(bar_ts, (bid + ask) / 2, action, acct, eq, bh, model.votes_str())
         except ccxt.BaseError as e:
             print(f"exchange error ({type(e).__name__}): {e} - retrying in 30s")
@@ -209,7 +241,7 @@ def main():
     mode = "replay" if args.replay else "live"
     # replay uses the training data (symbol); live uses the live pair (e.g. BTC/CAD)
     acct = PaperAccount(Path(cfg["paths"]["report"]) / f"paper_{mode}",
-                        cfg["paper"]["starting_cash"], cfg["fee"], reset=args.reset,
+                        cfg["paper"]["starting_cash"], cfg, reset=args.reset,
                         symbol=cfg["live_symbol"] if mode == "live" else cfg["symbol"])
     try:
         if args.replay:
