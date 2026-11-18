@@ -88,9 +88,15 @@ def main():
     runs = cfg.get("monkey_runs", 1000)
     monkeys = monkey_returns(close, positions, cost, runs)
     agent_ret = (agent_eq[-1] - 1) * 100
-    beats = float((agent_ret > monkeys).mean() * 100)
+    # ties (monkey identical to the agent) count as half, with a small tolerance for rounding
+    tol = 1e-6
+    beats = float(((agent_ret > monkeys + tol).mean() + 0.5 * (np.abs(agent_ret - monkeys) <= tol).mean()) * 100)
+    # with only 1-2 holding periods there is nothing to shuffle: every monkey = the agent
+    n_long = int(np.sum(np.diff(np.concatenate([[0], positions])) == 1))
+    testable = bool(trades > 0 and monkeys.std() > tol)
     monkey = {"agent_label": agent_label, "symbol": sym, "agent_return_%": round(agent_ret, 3),
               "trades": int(trades), "runs": runs, "beats_%": round(beats, 1),
+              "testable": testable, "holding_periods": n_long,
               "monkey_median_%": round(float(np.median(monkeys)), 3),
               "monkey_p5_%": round(float(np.percentile(monkeys, 5)), 3),
               "monkey_p95_%": round(float(np.percentile(monkeys, 95)), 3)}
@@ -102,12 +108,17 @@ def main():
           f"{positions.mean() * 100:.0f}% time in market, at random times")
     if trades == 0:
         print("  agent made no trades - nothing to compare (it's the same as 'Do nothing').")
+    elif not testable:
+        print(f"  can't judge: only {n_long} holding period(s), so there's no timing to shuffle "
+              "(every monkey is identical to the agent).")
     else:
         print(f"  agent {agent_ret:+.2f}%  vs monkeys: median {monkey['monkey_median_%']:+.2f}%, "
               f"90% between {monkey['monkey_p5_%']:+.2f}% and {monkey['monkey_p95_%']:+.2f}%")
         verdict = ("likely real skill" if beats >= 95 else
                    "maybe something, not convincing" if beats >= 75 else "no better than chance")
         print(f"  agent beats {beats:.1f}% of monkeys -> {verdict}")
+        if n_long < 5:
+            print(f"  (only {n_long} holding periods - weak test, take it with a grain of salt)")
 
     out = Path(cfg["paths"]["report"])
     out.mkdir(parents=True, exist_ok=True)

@@ -336,7 +336,13 @@ with tab_bt:
             st.subheader("🐒 Monkey test: skill or luck?")
             if mk["trades"] == 0:
                 st.info("The agent made no trades on this period, so there's nothing to compare.")
+            elif not mk.get("testable", True):
+                st.info(f"Can't judge: only {mk.get('holding_periods', '?')} holding period(s), so "
+                        "there's no timing to shuffle - every random trader ends up identical to "
+                        "the agent (it's basically buy & hold).")
             else:
+                if mk.get("holding_periods", 99) < 5:
+                    st.caption(f"⚠️ Only {mk['holding_periods']} holding periods - weak test.")
                 beats = mk["beats_%"]
                 verdict = ("✅ likely real skill" if beats >= 95 else
                            "🤔 maybe something, not convincing" if beats >= 75 else
