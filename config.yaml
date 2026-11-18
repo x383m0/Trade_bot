@@ -78,7 +78,8 @@ walkforward:
   folds: 6                # number of test periods
   start: 0.40             # periods cover 40%..85% of history; the last 15% (the normal
   end: 0.85               #   --split test) is never touched, so it stays the final exam
-  timesteps: 300000       # training steps per seed per period (total = folds x seeds x this)
+  timesteps: 1000000      # training steps per seed per period (total = folds x seeds x this).
+                          # 1M: runs showed seeds still improving at 0.6-1.9M steps
 
 monkey_runs: 1000         # random traders to compare against in backtest.py
 

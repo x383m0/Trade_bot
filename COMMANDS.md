@@ -72,7 +72,7 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 
 **Walk-forward** is the most trustworthy test: for each period it trains new bots only on data
 *before* it, then lets them trade that period unseen. It reports in how many periods the bot beat
-buy & hold. It takes `folds × seeds × timesteps` steps (default 6 × 3 × 300k = 5.4M), so run it on
+buy & hold. It takes `folds × seeds × timesteps` steps (default 6 × 3 × 1M = 18M), so run it on
 the strong PC with `--parallel`. Ctrl+C pauses it; rerun the same command to continue.
 The last 15% of history is never used, so `--split test` stays the final exam.
 
