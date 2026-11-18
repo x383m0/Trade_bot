@@ -13,8 +13,11 @@ paper_trade.py use it automatically.
 import argparse
 import csv
 import json
+import multiprocessing as mp
+import os
 import shutil
 import time
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -105,12 +108,22 @@ def train_one(cfg, splits, seed, timesteps, model_path, log_path):
     t = cfg["train"]
     model = PPO("MlpPolicy", venv, seed=seed, verbose=0, n_steps=1024, batch_size=256,
                 learning_rate=t.get("learning_rate", 3e-4), ent_coef=t.get("ent_coef", 0.01),
-                gamma=t.get("gamma", 0.99))
+                gamma=t.get("gamma", 0.99), device=t.get("device", "cpu"))
     val_envs = {s: make_env(cfg, *splits[s]["val"]) for s in syms}
     cb = ValCallback(val_envs, model_path, log_path, cfg["timeframe"], seed,
                      every=max(10_000, timesteps // 20))
     model.learn(total_timesteps=timesteps, callback=cb)
     return cb.best_row
+
+
+def _train_seed_worker(seed, timesteps, model_path, log_path, threads):
+    """Runs in its own process (--parallel): loads the data itself and trains one seed,
+    limited to `threads` CPU threads so parallel seeds don't fight over the cores."""
+    import torch
+    torch.set_num_threads(threads)
+    cfg = load_config()
+    splits, _ = load_splits(cfg)
+    return train_one(cfg, splits, seed, timesteps, model_path, log_path)
 
 
 def main():
@@ -119,6 +132,8 @@ def main():
     p.add_argument("--timesteps", type=int, default=cfg["train"]["total_timesteps"])
     p.add_argument("--seeds", type=int, default=cfg["train"].get("n_seeds", 1),
                    help="how many agents to train with different random seeds")
+    p.add_argument("--parallel", type=int, default=cfg["train"].get("parallel", 1),
+                   help="train this many seeds at the same time (use on CPUs with many cores)")
     args = p.parse_args()
 
     splits, norm = load_splits(cfg)
@@ -140,12 +155,25 @@ def main():
         {"seeds": seeds, "timesteps": args.timesteps, "coins": list(splits),
          "started": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=1))
 
-    results = []
-    for i, seed in enumerate(seeds, 1):
-        print(f"\n=== seed {seed} ({i}/{len(seeds)}) ===")
-        best = train_one(cfg, splits, seed, args.timesteps, f"{main_path}_seed{seed}",
-                         report / f"training_log_seed{seed}.csv")
-        results.append(best)
+    workers = max(1, min(args.parallel, len(seeds)))
+    if workers == 1:
+        results = []
+        for i, seed in enumerate(seeds, 1):
+            print(f"\n=== seed {seed} ({i}/{len(seeds)}) ===")
+            best = train_one(cfg, splits, seed, args.timesteps, f"{main_path}_seed{seed}",
+                             report / f"training_log_seed{seed}.csv")
+            results.append(best)
+    else:
+        cores = os.cpu_count() or 2
+        threads = max(1, cores // workers)
+        print(f"\n=== training {len(seeds)} seeds, {workers} at a time "
+              f"({cores} CPU threads -> {threads} per seed) ===")
+        # "spawn" works the same on Windows, Linux and Mac
+        with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn")) as ex:
+            futures = [ex.submit(_train_seed_worker, seed, args.timesteps, f"{main_path}_seed{seed}",
+                                 str(report / f"training_log_seed{seed}.csv"), threads)
+                       for seed in seeds]
+            results = [f.result() for f in futures]
 
     coin_cols = [c for c in results[0] if c.startswith("val_ret_")]
     summary = pd.DataFrame(results)[["seed", "val_return_%", "val_sharpe", "val_max_drawdown_%",

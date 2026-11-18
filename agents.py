@@ -73,14 +73,14 @@ def load_agent(cfg, verbose=True):
         m = json.loads(manifest.read_text())
         paths = [p for p in m["models"] if Path(p + ".zip").exists()]
         if len(paths) > 1:
-            agent = Ensemble([PPO.load(p) for p in paths], [f"seed {s}" for s in m["seeds"]],
+            agent = Ensemble([PPO.load(p, device="cpu") for p in paths], [f"seed {s}" for s in m["seeds"]],
                              ens_cfg.get("min_agree", 0.5))
             if verbose:
                 print(f"agent: ensemble of {len(agent)} seeds (majority vote)")
             return agent
     if verbose:
         print("agent: single best model")
-    return Single(PPO.load(cfg["paths"]["model"]), "best seed")
+    return Single(PPO.load(cfg["paths"]["model"], device="cpu"), "best seed")
 
 
 def load_seed_models(cfg):
@@ -89,5 +89,5 @@ def load_seed_models(cfg):
     if not manifest.exists():
         return {}
     m = json.loads(manifest.read_text())
-    return {f"seed {s}": Single(PPO.load(p), f"seed {s}")
+    return {f"seed {s}": Single(PPO.load(p, device="cpu"), f"seed {s}")
             for s, p in zip(m["seeds"], m["models"]) if Path(p + ".zip").exists()}
