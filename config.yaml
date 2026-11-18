@@ -35,9 +35,9 @@ rules:
   min_hold: 0             # candles the bot must hold before it may sell (0 = off; e.g. 4 = 1h on 15m)
   stop_loss: 0.0          # sell at market if the open trade is down this much (0 = off; 0.05 = 5%)
 reward:
-  type: profit            # profit = make money | excess = beat buy & hold (stepping aside in a
+  type: excess            # profit = make money | excess = beat buy & hold (stepping aside in a
                           #   crash scores, "just hold in a bull market" doesn't)
-  drawdown_penalty: 0.0   # extra penalty when equity sinks below its peak (0 = off; try 0.5-2)
+  drawdown_penalty: 1.0   # extra penalty when equity sinks below its peak (0 = off; try 0.5-2)
 
 # --- data split (chronological, never shuffled) ---
 split:
