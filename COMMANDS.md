@@ -37,6 +37,7 @@ Rerun after changing `symbol`, `train_symbols`, `timeframe` or `years`.
 | `python train.py --timesteps 100000` | Quick run (good for trying settings) |
 | `python train.py --seeds 5` | Train 5 agents instead of 3 (more reliable, longer) |
 | `python train.py --seeds 1 --timesteps 50000` | Fastest possible run to check things work |
+| `python train.py --timesteps 0` | **Train until you press Ctrl+C** (all seeds at once). Best checkpoints are kept, summary written on stop |
 | `python train.py --parallel 3` | Train the 3 seeds **at the same time** (strong CPU = ~3x faster) |
 | `python train.py --seeds 6 --parallel 6` | 6 seeds at once (needs 12+ CPU threads) |
 

@@ -23,6 +23,7 @@ MENU = [
     ("Medium training (3 seeds, 150k steps)", ["train.py", "--timesteps", "150000"]),
     ("Full training (settings from config.yaml)", ["train.py"]),
     ("Custom training (asks seeds and steps)", ["train.py", "--seeds", "{seeds}", "--timesteps", "{steps}"]),
+    ("Train until I stop it (Ctrl+C), all seeds at once", ["train.py", "--timesteps", "0"]),
     ("FAST training on a strong PC: seeds at the same time (asks how many)",
      ["train.py", "--seeds", "{seeds}", "--parallel", "{seeds}"]),
     ("TESTING", None),

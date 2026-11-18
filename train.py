@@ -110,10 +110,21 @@ def train_one(cfg, splits, seed, timesteps, model_path, log_path):
                 learning_rate=t.get("learning_rate", 3e-4), ent_coef=t.get("ent_coef", 0.01),
                 gamma=t.get("gamma", 0.99), device=t.get("device", "cpu"))
     val_envs = {s: make_env(cfg, *splits[s]["val"]) for s in syms}
+    unlimited = not timesteps
     cb = ValCallback(val_envs, model_path, log_path, cfg["timeframe"], seed,
-                     every=max(10_000, timesteps // 20))
-    model.learn(total_timesteps=timesteps, callback=cb)
+                     every=25_000 if unlimited else max(10_000, timesteps // 20))
+    try:
+        model.learn(total_timesteps=UNLIMITED if unlimited else timesteps, callback=cb)
+    except KeyboardInterrupt:
+        # Ctrl+C: stop this seed but keep its best checkpoint (already saved by the callback)
+        global INTERRUPTED
+        INTERRUPTED = True
+        print(f"\n  [seed {seed}] stopped at {model.num_timesteps:,} steps - keeping its best checkpoint")
     return cb.best_row
+
+
+UNLIMITED = 10 ** 12   # "--timesteps 0": train until Ctrl+C
+INTERRUPTED = False
 
 
 def _train_seed_worker(seed, timesteps, model_path, log_path, threads):
@@ -129,7 +140,8 @@ def _train_seed_worker(seed, timesteps, model_path, log_path, threads):
 def main():
     cfg = load_config()
     p = argparse.ArgumentParser()
-    p.add_argument("--timesteps", type=int, default=cfg["train"]["total_timesteps"])
+    p.add_argument("--timesteps", type=int, default=cfg["train"]["total_timesteps"],
+                   help="training steps per seed; 0 = keep training until you press Ctrl+C")
     p.add_argument("--seeds", type=int, default=cfg["train"].get("n_seeds", 1),
                    help="how many agents to train with different random seeds")
     p.add_argument("--parallel", type=int, default=cfg["train"].get("parallel", 1),
@@ -152,10 +164,15 @@ def main():
         old.unlink(missing_ok=True)  # clear the previous run so the dashboard isn't confused
     seeds = [cfg["train"]["seed"] + i for i in range(args.seeds)]
     (report / "train_run.json").write_text(json.dumps(
-        {"seeds": seeds, "timesteps": args.timesteps, "coins": list(splits),
+        {"seeds": seeds, "timesteps": args.timesteps or None, "coins": list(splits),
          "started": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=1))
 
     workers = max(1, min(args.parallel, len(seeds)))
+    if not args.timesteps:
+        if len(seeds) > workers:   # one after another would never get past the first seed
+            workers = len(seeds)
+        print(f"\nUNLIMITED training: press Ctrl+C when you want to stop. The best checkpoint "
+              f"of each seed is kept, then the summary and ensemble are written as usual.")
     if workers == 1:
         results = []
         for i, seed in enumerate(seeds, 1):
@@ -163,6 +180,9 @@ def main():
             best = train_one(cfg, splits, seed, args.timesteps, f"{main_path}_seed{seed}",
                              report / f"training_log_seed{seed}.csv")
             results.append(best)
+            if INTERRUPTED:
+                print("Ctrl+C: skipping the remaining seeds")
+                break
     else:
         cores = os.cpu_count() or 2
         threads = max(1, cores // workers)
@@ -173,7 +193,22 @@ def main():
             futures = [ex.submit(_train_seed_worker, seed, args.timesteps, f"{main_path}_seed{seed}",
                                  str(report / f"training_log_seed{seed}.csv"), threads)
                        for seed in seeds]
-            results = [f.result() for f in futures]
+            try:
+                for f in futures:
+                    f.result()
+            except KeyboardInterrupt:
+                print("\nCtrl+C: stopping all seeds and keeping their best checkpoints...")
+            results = []
+            for f in futures:
+                try:
+                    results.append(f.result())
+                except BaseException:   # a seed that was stopped before finishing setup
+                    results.append(None)
+
+    results = [r for r in results if r]
+    if not results:
+        raise SystemExit("No checkpoint was saved yet (stopped before the first validation check).")
+    seeds = [int(r["seed"]) for r in results]
 
     coin_cols = [c for c in results[0] if c.startswith("val_ret_")]
     summary = pd.DataFrame(results)[["seed", "val_return_%", "val_sharpe", "val_max_drawdown_%",

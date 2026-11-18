@@ -196,14 +196,22 @@ with tab_train:
 
         cur_seed = int(frames[-1]["seed"].iloc[0])           # most recently written log
         cur = df[df["seed"] == cur_seed]
-        steps_done = sum(min(int(df.loc[df["seed"] == s, "timesteps"].max()), target)
-                         for s in df["seed"].unique())
-        overall = min(1.0, steps_done / (target * len(seeds)))
         k = seeds.index(cur_seed) + 1 if cur_seed in seeds else len(df["seed"].unique())
-        st.progress(overall, text="✅ Training finished" if finished else
-                    f"Seed {k}/{len(seeds)} (seed {cur_seed}) · "
-                    f"{int(cur['timesteps'].iloc[-1]):,} / {target:,} steps · "
-                    f"overall {overall * 100:.0f}% · {cur['elapsed_s'].iloc[-1] / 60:.1f} min on this seed")
+        if not target:   # python train.py --timesteps 0: runs until Ctrl+C
+            most = int(df["timesteps"].max())
+            st.progress(1.0 if finished else min(0.99, most / 5_000_000),
+                        text="✅ Training finished" if finished else
+                        f"♾️ Unlimited training · {len(df['seed'].unique())} seeds · furthest at "
+                        f"{most:,} steps · {cur['elapsed_s'].iloc[-1] / 60:.0f} min · "
+                        "press Ctrl+C in the training terminal to stop")
+        else:
+            steps_done = sum(min(int(df.loc[df["seed"] == s, "timesteps"].max()), target)
+                             for s in df["seed"].unique())
+            overall = min(1.0, steps_done / (target * len(seeds)))
+            st.progress(overall, text="✅ Training finished" if finished else
+                        f"Seed {k}/{len(seeds)} (seed {cur_seed}) · "
+                        f"{int(cur['timesteps'].iloc[-1]):,} / {target:,} steps · "
+                        f"overall {overall * 100:.0f}% · {cur['elapsed_s'].iloc[-1] / 60:.1f} min on this seed")
 
         best_per_seed = df.loc[df.groupby("seed")["val_return_%"].idxmax()]
         top = best_per_seed.loc[best_per_seed["val_return_%"].idxmax()]
