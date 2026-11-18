@@ -37,7 +37,9 @@ rules:
 reward:
   type: excess            # profit = make money | excess = beat buy & hold (stepping aside in a
                           #   crash scores, "just hold in a bull market" doesn't)
-  drawdown_penalty: 1.0   # extra penalty when equity sinks below its peak (0 = off; try 0.5-2)
+  drawdown_penalty: 0.0   # extra penalty when equity sinks below its peak (0 = off).
+                          # WARNING: it punishes every dip while holding, so even 0.1 makes holding
+                          # look worse than cash -> the bot learns to stay in cash. Keep 0 for now.
 
 # --- data split (chronological, never shuffled) ---
 split:

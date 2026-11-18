@@ -93,7 +93,7 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 | `rules.min_hold` | 0 | Candles it must hold before selling (24 on 1h = 1 day, 96 on 15m = 1 day) | train |
 | `rules.stop_loss` | 0.0 | Sell at market if the trade is down this much (0.05 = 5%) | train |
 | `reward.type` | profit | `excess` = scored on beating buy & hold, not raw profit | train |
-| `reward.drawdown_penalty` | 0.0 | Punish sinking below its peak (try 0.5–2) | train |
+| `reward.drawdown_penalty` | 0.0 | Punish sinking below its peak. ⚠️ Even 0.1 teaches the bot to stay in cash - keep 0 | train |
 | `train.total_timesteps` | 500000 | Training length per seed | train |
 | `train.n_seeds` | 3 | Agents per run | train |
 | `train.window` | 16 | Candles the agent looks back at | train |
@@ -121,7 +121,7 @@ The bot makes every decision itself: no forced holding time (`min_hold: 0`) and 
 |---|---|---|
 | 1. 1h + limit orders | `timeframe: 1h`, `years: 8` | fetch, train, backtest |
 | 2. + learn caution, steadier learning | `trade_penalty: 0.002` (10x; training-only cost), `train.learning_rate: 0.0001` | train, backtest |
-| 3. + smarter reward | `reward.type: excess`, `reward.drawdown_penalty: 1.0` | train, backtest |
+| 3. + smarter reward | `reward.type: excess` (drawdown_penalty stays 0: 1.0 made the bot sit in cash) | train, backtest |
 
 Why caution matters: with Kraken's fees, trades shorter than ~1 day rarely win even with very good
 predictions (a 1h move is ~0.5%, a limit round trip costs ~0.5%). The hope is that the bot learns
