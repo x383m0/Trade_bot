@@ -36,6 +36,20 @@ and copies the best one (by validation return) to the main model used by `backte
 "Seeds agree?" check: if seeds disagree a lot, don't trust the best one too much.
 Training time = seeds × one run.
 
+### Ensemble voting
+
+After a multi-seed run, `backtest.py` and `paper_trade.py` use **all seeds together**: every
+candle each agent votes flat/long, and the bot only changes position when a majority agrees
+(`ensemble.min_agree` in `config.yaml`). When the agents disagree it stays put, which means
+fewer trades and fewer fees. Set `ensemble.enabled: false` to use only the best single seed.
+The backtest table also shows each seed on its own so you can see the spread.
+
+### Monkey test (skill or luck?)
+
+`backtest.py` compares the agent with 1000 random traders that make the **same number of
+trades** at random times with the same fees. If the agent doesn't beat ~95% of them, its timing
+is probably no better than chance. Shown in the terminal and in the dashboard's Backtest tab.
+
 ### Dashboard tabs
 
 - **🟢 Live (paper)**: candlestick chart with buy ▲ / sell ▼ markers, fake balance vs buy & hold,
@@ -68,7 +82,8 @@ Offline / pipeline test: `python -m data.fetch --synthetic` generates a random w
 | `env/trading_env.py` | Gymnasium env: action 0 = flat, 1 = long; reward = net log-return − costs |
 | `common.py` | config, chronological split, train-only normalization, live observation, metrics |
 | `train.py` | PPO training with validation checkpointing (+ saves normalization stats) |
-| `backtest.py` | metrics table + equity chart vs baselines |
+| `backtest.py` | metrics vs baselines, each seed, and the monkey test |
+| `agents.py` | loads the agent: ensemble of seeds (majority vote) or single model |
 | `paper_trade.py` | fake-money trading on live Kraken prices, or replay of the test period |
 | `dashboard.py` | Streamlit dashboard |
 

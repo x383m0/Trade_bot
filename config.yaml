@@ -20,6 +20,12 @@ train:
   n_seeds: 3             # agents trained per run (python train.py --seeds N to override)
   window: 32              # bars of history the agent sees
 
+ensemble:
+  enabled: true           # all seeds vote; position only changes when a majority agrees
+  min_agree: 0.5          # share of agents that must agree to change position (strictly more than)
+
+monkey_runs: 1000         # random traders to compare against in backtest.py
+
 paper:
   starting_cash: 20       # fake USD for paper trading
   replay_delay: 0.1       # seconds per bar in --replay mode

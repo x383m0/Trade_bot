@@ -78,7 +78,10 @@ with tab_live:
         c[0].metric("Fake balance", f"${last['equity']:.2f}", f"{pnl:+.2f} ({pnl / start * 100:+.1f}%)")
         c[1].metric("vs buy & hold", f"${last['buy_hold']:.2f}",
                     f"{last['equity'] - last['buy_hold']:+.2f}")
-        c[2].metric("Holding", "₿ BTC" if state["pos"] else "💵 Cash")
+        c[2].metric("Holding", "₿ BTC" if state["pos"] else "💵 Cash",
+                    f"agents: {state['votes']}" if state.get("votes") else None, delta_color="off",
+                    help="With an ensemble, each trained seed votes every candle. The bot only "
+                         "changes position when a majority agrees.")
         c[3].metric("Trades", state["n_trades"],
                     f"fees paid ${trades['fee_usd'].sum():.2f}" if len(trades) else None,
                     delta_color="off")
@@ -302,8 +305,47 @@ with tab_bt:
         st.plotly_chart(fig, width="stretch", key="bt_chart", config=PLOT_CONFIG)
 
         st.subheader("Metrics")
-        st.dataframe(mt, width="stretch")
-        st.caption(f"Time in market: {eq['position'].mean()*100:.1f}% of bars")
+        mk_f = REPORT / f"monkey_{split}.json"
+        mk = json.loads(mk_f.read_text()) if mk_f.exists() else None
+        label = mk["agent_label"] if mk else "PPO agent"
+        st.dataframe(mt.rename(index={"PPO agent": f"▶ {label}"}), width="stretch")
+        st.caption(f"Time in market: {eq['position'].mean()*100:.1f}% of bars. "
+                   "Rows 'seed …' = each trained agent on its own; a big spread between them "
+                   "means results depend on luck.")
+
+        if mk:
+            st.subheader("🐒 Monkey test: skill or luck?")
+            if mk["trades"] == 0:
+                st.info("The agent made no trades on this period, so there's nothing to compare.")
+            else:
+                beats = mk["beats_%"]
+                verdict = ("✅ likely real skill" if beats >= 95 else
+                           "🤔 maybe something, not convincing" if beats >= 75 else
+                           "❌ no better than chance")
+                c = st.columns(3)
+                c[0].metric("Beats random traders", f"{beats:.1f}%", verdict, delta_color="off")
+                c[1].metric("Agent return", f"{mk['agent_return_%']:+.2f}%")
+                c[2].metric("Typical monkey", f"{mk['monkey_median_%']:+.2f}%",
+                            f"90% between {mk['monkey_p5_%']:+.2f}% and {mk['monkey_p95_%']:+.2f}%",
+                            delta_color="off")
+                st.caption(f"{mk['runs']} random traders each made the same {mk['trades']} trades "
+                           "as the agent, at random times, paying the same fees. If the agent's "
+                           "timing were no better than chance, it would land in the middle of the "
+                           "pack. Aim for 95%+.")
+                mf = REPORT / f"monkeys_{split}.csv"
+                if mf.exists():
+                    mon = pd.read_csv(mf)["return_%"]
+                    h = go.Figure(go.Histogram(x=mon, nbinsx=50, name="random traders",
+                                               marker_color="#c7c7c7"))
+                    h.add_vline(x=mk["agent_return_%"], line_color="#1f77b4", line_width=3,
+                                annotation_text=f"agent {mk['agent_return_%']:+.2f}%",
+                                annotation_position="top")
+                    h.add_vline(x=float(mon.quantile(0.95)), line_dash="dot", line_color="gray",
+                                annotation_text="95% line", annotation_position="bottom right")
+                    h.update_layout(height=300, xaxis_title="return % over the period",
+                                    yaxis_title="# random traders", showlegend=False,
+                                    margin=dict(l=10, r=10, t=30, b=10))
+                    st.plotly_chart(h, width="stretch", key="monkey_hist", config=PLOT_CONFIG)
 
 
 # ---------------- Config ----------------

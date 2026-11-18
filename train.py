@@ -141,6 +141,9 @@ def main():
     summary["chosen"] = summary["seed"] == winner["seed"]
     summary.to_csv(report / "seeds_summary.csv", index=False)
     shutil.copy(f"{main_path}_seed{int(winner['seed'])}.zip", f"{main_path}.zip")
+    # all seeds of this run, for ensemble voting (agents.py)
+    Path(f"{main_path}_ensemble.json").write_text(json.dumps(
+        {"seeds": seeds, "models": [f"{main_path}_seed{s}" for s in seeds]}, indent=1))
 
     r = summary["val_return_%"]
     print("\n=== summary (best checkpoint of each seed, on validation) ===")
@@ -150,7 +153,10 @@ def main():
               f"range {r.min():+.2f}% .. {r.max():+.2f}%")
         if r.std() > max(2.0, abs(r.mean())):
             print("seeds disagree a lot -> results are mostly luck; be skeptical of the best one.")
-    print(f"\nchosen: seed {int(winner['seed'])} -> {main_path}.zip")
+    print(f"\nbest single seed: {int(winner['seed'])} -> {main_path}.zip")
+    if len(seeds) > 1:
+        print("backtest.py / paper_trade.py will use the ENSEMBLE of all seeds "
+              "(set ensemble.enabled: false in config.yaml to use only the best seed)")
 
 
 if __name__ == "__main__":

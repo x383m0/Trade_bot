@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-from stable_baselines3 import PPO
 
+from agents import load_agent
 from common import live_observation, load_config, load_norm
 
 HISTORY_BARS = 300  # longest rolling feature is 96 bars + 32-bar window -> 300 is plenty
@@ -61,7 +61,7 @@ class PaperAccount:
         with open(f, "a", newline="") as fh:
             csv.writer(fh).writerow(row)
 
-    def step(self, bar, action, bid, ask):
+    def step(self, bar, action, bid, ask, votes=""):
         """bar = the candle just closed (ts, open, high, low, close); trade happens at bid/ask now."""
         bar_ts = int(bar["ts"])
         s, mid = self.s, (bid + ask) / 2
@@ -88,6 +88,7 @@ class PaperAccount:
         self._append(self.eq_f, [t, *ohlc, round(mid, 2), round(self.equity(mid), 4),
                                  round(bh, 4), s["pos"], action])
         s["last_bar_ts"] = int(bar_ts)
+        s["votes"] = votes  # ensemble agreement, e.g. "2/3 long" (shown on the dashboard)
         self.state_f.write_text(json.dumps(s, indent=1))
         return self.equity(mid), bh
 
@@ -103,9 +104,10 @@ def decide(model, norm, window, bars, pos):
     return int(action)
 
 
-def log_line(bar_ts, price, action, acct, eq, bh):
+def log_line(bar_ts, price, action, acct, eq, bh, votes=""):
     pos = "LONG BTC" if acct.s["pos"] else "CASH    "
-    print(f"{fmt_ts(bar_ts)}  price {price:>10.2f}  action {'long' if action else 'flat'}  "
+    v = f"  votes {votes}" if votes else ""
+    print(f"{fmt_ts(bar_ts)}  price {price:>10.2f}  action {'long' if action else 'flat'}{v}  "
           f"-> {pos}  equity ${eq:7.2f}  (buy&hold ${bh:7.2f})  trades {acct.s['n_trades']}")
 
 
@@ -125,8 +127,9 @@ def run_replay(cfg, model, norm, acct, delay, max_bars):
         if action is None:
             continue
         price = df["close"].iloc[i]
-        eq, bh = acct.step(df.iloc[i], action, price * (1 - slip), price * (1 + slip))
-        log_line(df["ts"].iloc[i], price, action, acct, eq, bh)
+        eq, bh = acct.step(df.iloc[i], action, price * (1 - slip), price * (1 + slip),
+                           model.votes_str())
+        log_line(df["ts"].iloc[i], price, action, acct, eq, bh, model.votes_str())
         time.sleep(delay)
 
 
@@ -151,8 +154,8 @@ def run_live(cfg, model, norm, acct):
                     tk = ex.fetch_ticker(cfg["symbol"])
                     last = tk.get("last") or bars["close"].iloc[-1]
                     bid, ask = tk.get("bid") or last, tk.get("ask") or last
-                    eq, bh = acct.step(bars.iloc[-1], action, bid, ask)
-                    log_line(bar_ts, (bid + ask) / 2, action, acct, eq, bh)
+                    eq, bh = acct.step(bars.iloc[-1], action, bid, ask, model.votes_str())
+                    log_line(bar_ts, (bid + ask) / 2, action, acct, eq, bh, model.votes_str())
         except ccxt.BaseError as e:
             print(f"exchange error ({type(e).__name__}): {e} - retrying in 30s")
             time.sleep(30)
@@ -174,7 +177,7 @@ def main():
     p.add_argument("--bars", type=int, default=None, help="max bars to replay")
     args = p.parse_args()
 
-    model = PPO.load(cfg["paths"]["model"])
+    model = load_agent(cfg)
     norm = load_norm(cfg)
     mode = "replay" if args.replay else "live"
     acct = PaperAccount(Path(cfg["paths"]["report"]) / f"paper_{mode}",
