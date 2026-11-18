@@ -3,6 +3,7 @@
 Usage: streamlit run dashboard.py
 Leave it open while `python train.py` runs — the training section refreshes automatically.
 """
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -17,10 +18,12 @@ cfg = load_config()
 REPORT = Path(cfg["paths"]["report"])
 
 st.title("📈 Trade_bot dashboard")
-st.caption(f"{cfg['symbol']} · {cfg['timeframe']} · {cfg['exchange']} · "
+st.caption(f"{cfg['symbol']} · {cfg['timeframe']} · trades on {cfg['exchange']} · "
+           f"trained on {cfg['data_exchange']} data · "
            f"fee {cfg['fee']*100:.2f}% + slippage {cfg['slippage']*100:.2f}% per side")
 
-tab_train, tab_bt, tab_cfg = st.tabs(["Training progress", "Backtest", "Config"])
+tab_live, tab_train, tab_bt, tab_cfg = st.tabs(["🟢 Live (paper)", "Training progress",
+                                                "Backtest", "Config"])
 
 
 def line_chart(df, x, ys, title, yaxis, zero_line=False):
@@ -32,6 +35,75 @@ def line_chart(df, x, ys, title, yaxis, zero_line=False):
     fig.update_layout(title=title, yaxis_title=yaxis, xaxis_title=x, height=320,
                       margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation="h"))
     return fig
+
+
+# ---------------- Live paper trading (auto-refreshing) ----------------
+with tab_live:
+    modes = [m for m in ("live", "replay") if (REPORT / f"paper_{m}" / "equity.csv").exists()]
+    if not modes:
+        st.info("No paper trading yet. Run `python paper_trade.py` (live Kraken prices) or "
+                "`python paper_trade.py --replay` (fast demo on held-out data).")
+    else:
+        mode = st.radio("Mode", modes, horizontal=True,
+                        format_func=lambda m: {"live": "Live prices", "replay": "Replay (demo)"}[m])
+
+        @st.fragment(run_every="5s")
+        def live_section(mode):
+            folder = REPORT / f"paper_{mode}"
+            eq = pd.read_csv(folder / "equity.csv")
+            if eq.empty:
+                st.info("Started - waiting for the first closed bar…")
+                return
+            state = json.loads((folder / "state.json").read_text())
+            trades = pd.read_csv(folder / "trades.csv")
+            last = eq.iloc[-1]
+            start = state["start_cash"]
+            pnl = last["equity"] - start
+
+            c = st.columns(5)
+            c[0].metric("Fake balance", f"${last['equity']:.2f}", f"{pnl:+.2f} ({pnl / start * 100:+.1f}%)")
+            c[1].metric("vs buy & hold", f"${last['buy_hold']:.2f}",
+                        f"{last['equity'] - last['buy_hold']:+.2f}")
+            c[2].metric("Holding", "₿ BTC" if state["pos"] else "💵 Cash")
+            c[3].metric("Trades", state["n_trades"],
+                        f"fees paid ${trades['fee_usd'].sum():.2f}" if len(trades) else None,
+                        delta_color="off")
+            c[4].metric("Last bar", str(last["time"])[5:], f"price {last['price']:,.2f}",
+                        delta_color="off")
+            if mode == "replay":
+                st.caption("Replay = held-out test data fed one bar at a time, as if live. "
+                           "Fake money, no orders sent.")
+            else:
+                st.caption(f"Live {cfg['exchange']} prices since {state['started']} UTC. "
+                           "Fake money, no orders sent. One decision per closed bar.")
+
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.55, 0.45],
+                                vertical_spacing=0.06,
+                                subplot_titles=("Price & trades", "Fake balance ($)"))
+            fig.add_trace(go.Scatter(x=eq["time"], y=eq["price"], name="price",
+                                     line=dict(color="gray", width=1)), 1, 1)
+            if len(trades):
+                for side, color, sym in (("BUY", "#2ca02c", "triangle-up"),
+                                         ("SELL", "#d62728", "triangle-down")):
+                    t = trades[trades["side"] == side].tail(1000)
+                    fig.add_trace(go.Scatter(x=t["time"], y=t["price"], mode="markers",
+                                             name=side.lower(),
+                                             marker=dict(symbol=sym, size=9, color=color)), 1, 1)
+            fig.add_trace(go.Scatter(x=eq["time"], y=eq["equity"], name="bot"), 2, 1)
+            fig.add_trace(go.Scatter(x=eq["time"], y=eq["buy_hold"], name="buy & hold",
+                                     opacity=0.7), 2, 1)
+            fig.add_hline(y=start, line_dash="dash", line_color="gray", row=2, col=1)
+            fig.update_layout(height=650, margin=dict(l=10, r=10, t=40, b=10),
+                              legend=dict(orientation="h"), uirevision=mode)
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.subheader("Trade log")
+            if len(trades):
+                st.dataframe(trades.iloc[::-1], use_container_width=True, hide_index=True)
+            else:
+                st.caption("No trades yet - the bot is staying in cash.")
+
+        live_section(mode)
 
 
 # ---------------- Training progress (auto-refreshing) ----------------

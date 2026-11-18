@@ -22,7 +22,7 @@ def main():
     p.add_argument("--split", default="test", choices=["val", "test"])
     args = p.parse_args()
     cfg = load_config()
-    df, feats = load_splits(cfg)[args.split]
+    df, feats = load_splits(cfg)[0][args.split]
     env = make_env(cfg, df, feats)
     model = PPO.load(cfg["paths"]["model"])
 

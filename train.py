@@ -12,7 +12,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 
-from common import load_config, load_splits, make_env, metrics
+from common import load_config, load_splits, make_env, metrics, save_norm
 
 
 def run_episode(model, env):
@@ -77,7 +77,7 @@ def main():
     p.add_argument("--timesteps", type=int, default=cfg["train"]["total_timesteps"])
     args = p.parse_args()
 
-    splits = load_splits(cfg)
+    splits, norm = load_splits(cfg)
     tr_df, tr_f = splits["train"]
     va_df, va_f = splits["val"]
     print(f"bars: train {len(tr_df)}  val {len(va_df)}  test {len(splits['test'][0])}")
@@ -89,6 +89,7 @@ def main():
 
     path = cfg["paths"]["model"]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
+    save_norm(cfg, norm)  # paper/live trading must normalize features exactly like training
     log_path = Path(cfg["paths"]["report"]) / "training_log.csv"
     cb = ValCallback(make_env(cfg, va_df, va_f), path, log_path, cfg["timeframe"],
                      every=max(10_000, args.timesteps // 20))

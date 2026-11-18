@@ -1,6 +1,7 @@
 """Download OHLCV candles with ccxt and save to parquet.
 
 Usage: python -m data.fetch [--synthetic]
+Downloads from `data_exchange` in config.yaml (Coinbase by default: years of public history).
 --synthetic generates fake random-walk data (for testing the pipeline offline).
 """
 import argparse
@@ -9,33 +10,38 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
 
+from common import load_config
 
-def load_config(path="config.yaml"):
-    with open(path) as f:
-        return yaml.safe_load(f)
+# max candles per request for exchanges that cap it
+LIMITS = {"coinbase": 300, "kraken": 720, "bitstamp": 1000, "ndax": 1000}
 
 
 def fetch_ohlcv(cfg):
     import ccxt
 
-    ex = getattr(ccxt, cfg["exchange"])({"enableRateLimit": True})
+    name = cfg["data_exchange"]
+    if name == "kraken":
+        print("WARNING: Kraken's API only returns the last ~720 candles - use coinbase for history.")
+    ex = getattr(ccxt, name)({"enableRateLimit": True})
+    ex.load_markets()
     tf_ms = ex.parse_timeframe(cfg["timeframe"]) * 1000
-    since = ex.milliseconds() - int(cfg["years"] * 365 * 24 * 3600 * 1000)
+    limit = LIMITS.get(name, 1000)
+    now = ex.milliseconds()
+    since = now - int(cfg["years"] * 365 * 24 * 3600 * 1000)
     rows = []
-    while True:
-        batch = ex.fetch_ohlcv(cfg["symbol"], cfg["timeframe"], since=since, limit=1000)
-        if not batch:
-            break
-        rows += batch
-        since = batch[-1][0] + tf_ms
-        print(f"\rfetched {len(rows)} candles", end="")
-        if len(batch) < 2 or since >= ex.milliseconds():
-            break
-        time.sleep(ex.rateLimit / 1000)
+    while since < now:
+        batch = ex.fetch_ohlcv(cfg["symbol"], cfg["timeframe"], since=since, limit=limit)
+        if batch:
+            rows += batch
+            since = batch[-1][0] + tf_ms
+        else:  # gap with no data - skip ahead
+            since += limit * tf_ms
+        print(f"\rfetched {len(rows)} candles "
+              f"(up to {pd.to_datetime(since, unit='ms'):%Y-%m-%d})", end="")
     print()
     df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
+    df = df[df["ts"] + tf_ms <= now]  # drop the still-forming candle
     return df.drop_duplicates("ts").sort_values("ts").reset_index(drop=True)
 
 
@@ -61,11 +67,15 @@ def main():
     p.add_argument("--synthetic", action="store_true")
     args = p.parse_args()
     cfg = load_config()
-    df = synthetic_ohlcv() if args.synthetic else fetch_ohlcv(cfg)
+    if args.synthetic:
+        tf = cfg["timeframe"]
+        df = synthetic_ohlcv(freq=tf[:-1] + {"m": "min", "h": "h", "d": "D"}[tf[-1]])
+    else:
+        df = fetch_ohlcv(cfg)
     out = Path(cfg["paths"]["data"])
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out)
-    print(f"saved {len(df)} rows -> {out}")
+    print(f"saved {len(df)} rows -> {out}{'  (SYNTHETIC)' if args.synthetic else ''}")
 
 
 if __name__ == "__main__":

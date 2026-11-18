@@ -1,13 +1,14 @@
-exchange: binance        # any ccxt id: binance, binanceus, kraken, coinbase ...
-symbol: BTC/USDT
-timeframe: 15m           # try 5m / 1h to compare
-years: 2                 # history to download
+exchange: kraken          # where the bot trades (live/paper prices). Available in Canada.
+data_exchange: coinbase   # where training history comes from (Kraken's API only returns ~720 candles)
+symbol: BTC/USD
+timeframe: 15m            # to compare: 1h (and raise `years` to ~8 for the same amount of bars)
+years: 2                  # history to download
 
-fee: 0.001               # 0.1% per side
-slippage: 0.0005         # 0.05% per side
-trade_penalty: 0.0002    # extra reward penalty per position change (discourages over-trading)
+fee: 0.004                # Kraken taker (market order) fee per side, lowest volume tier
+slippage: 0.0005          # 0.05% per side
+trade_penalty: 0.0002     # extra reward penalty per position change (discourages over-trading)
 
-split:                   # chronological, never shuffled
+split:                    # chronological, never shuffled
   train: 0.70
   val: 0.15
   test: 0.15
@@ -16,9 +17,15 @@ train:
   algo: PPO
   total_timesteps: 500000
   seed: 42
-  window: 32             # bars of history the agent sees
+  window: 32              # bars of history the agent sees
 
+paper:
+  starting_cash: 20       # fake USD for paper trading
+  replay_delay: 0.1       # seconds per bar in --replay mode
+
+# {pair}, {timeframe}, {exchange}, {data_exchange} are filled in from the settings above,
+# so 15m and 1h runs keep separate data, models and reports.
 paths:
-  data: data/ohlcv.parquet
-  model: models/ppo_btc
-  report: reports
+  data: data/{data_exchange}_{pair}_{timeframe}.parquet
+  model: models/ppo_{pair}_{timeframe}
+  report: reports/{timeframe}

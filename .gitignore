@@ -7,3 +7,4 @@ reports/*.png
 .env
 .venv/
 reports/*.csv
+reports/
