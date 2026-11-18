@@ -30,7 +30,7 @@ import pandas as pd
 
 from agents import build_agent
 from backtest import monkey_returns
-from common import load_config, load_splits, make_env, metrics, pair_of, trade_cost
+from common import load_config, load_splits, make_env, metrics, pair_of, trade_cost, write_json
 from train import run_episode, train_seeds
 
 
@@ -112,7 +112,7 @@ def summarize(cfg, results, out_dir):
     show = df[["fold", "test_start", "test_end", "bot_%", "buy_hold_%", "excess_%", "trades",
                "in_market_%", "bot_max_dd_%", "monkey_beats_%"]]
     show.to_csv(out_dir / "summary.csv", index=False)
-    (out_dir / "summary.json").write_text(json.dumps(summ, indent=1))
+    write_json(out_dir / "summary.json", summ)
     print(f"\n================ WALK-FORWARD RESULT ({cfg['symbol']} {cfg['timeframe']}) ================")
     print(show.to_string(index=False))
     print(f"\nbeat buy & hold in {won}/{len(df)} periods, made money in {positive}/{len(df)}")
@@ -155,8 +155,8 @@ def main():
     print(f"walk-forward: {args.folds} periods between {start:.0%} and {end:.0%} of history, "
           f"{args.seeds} seeds x {args.timesteps:,} steps per period "
           f"(total {args.folds * args.seeds * args.timesteps:,} steps). Ctrl+C to pause.")
-    (out_dir / "run.json").write_text(json.dumps({"folds": args.folds, "signature": sig,
-                                                  "timesteps": args.timesteps, "seeds": args.seeds}))
+    write_json(out_dir / "run.json", {"folds": args.folds, "signature": sig,
+                                      "timesteps": args.timesteps, "seeds": args.seeds})
 
     results = []
     for i, fracs in enumerate(windows, 1):
@@ -173,7 +173,7 @@ def main():
             print(f"\nstopped during fold {i}. Run the same command again to continue from fold {i}.")
             break
         r["signature"] = sig
-        f.write_text(json.dumps(r, indent=1))
+        write_json(f, r)
         results.append(r)
     if results:
         summarize(cfg, results, out_dir)

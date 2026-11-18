@@ -1,5 +1,9 @@
 """Shared helpers: config, data loading, features, chronological split, normalization, metrics."""
+import io
 import json
+import os
+import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -7,6 +11,58 @@ import yaml
 
 from env.features import make_features, warmup_bars
 from env.trading_env import TradingEnv, position_context
+
+
+# ---- safe file sharing: the dashboard reads files while other scripts are writing them ----
+def write_json(path, obj):
+    """Write JSON so a reader never sees a half-written file: write a temp file, then swap it in
+    (the swap is instant). Windows can refuse the swap while a reader has the file open for a
+    split second, so retry a few times."""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=1, default=str))
+    for attempt in range(20):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            time.sleep(0.05)
+    os.replace(tmp, path)
+
+
+def read_json(path, default=None, retries=10):
+    """Read a JSON file that another script may be rewriting right now (retries briefly)."""
+    path = Path(path)
+    for _ in range(retries):
+        try:
+            return json.loads(path.read_text())
+        except FileNotFoundError:
+            return default
+        except (json.JSONDecodeError, PermissionError, OSError):
+            time.sleep(0.05)
+    return default
+
+
+def read_csv(path, **kw):
+    """Read a CSV that another script may be appending to right now: only complete lines are
+    parsed (a half-written last line is ignored) and an empty/just-created file gives an empty
+    table instead of an error."""
+    path = Path(path)
+    for _ in range(10):
+        try:
+            text = path.read_text()
+            break
+        except PermissionError:
+            time.sleep(0.05)
+    else:
+        text = ""
+    if "\n" not in text:
+        return pd.DataFrame()
+    text = text[: text.rfind("\n") + 1]          # drop a half-written last line
+    try:
+        return pd.read_csv(io.StringIO(text), **kw)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
 
 
 def pair_of(symbol):

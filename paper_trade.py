@@ -20,7 +20,7 @@ import pandas as pd
 import numpy as np
 
 from agents import load_agent
-from common import live_observation, load_config, load_norm, required_history, trade_rules
+from common import write_json, live_observation, load_config, load_norm, required_history, trade_rules
 from env.features import DAILY_HISTORY, to_daily
 from env.trading_env import apply_rules, limit_filled
 
@@ -135,7 +135,7 @@ class PaperAccount:
                                  round(bh, 4), s["pos"], action])
         s["last_bar_ts"] = bar_ts
         s["votes"] = votes  # ensemble agreement, e.g. "2/3 long" (shown on the dashboard)
-        self.state_f.write_text(json.dumps(s, indent=1))
+        write_json(self.state_f, s)
         return self.equity(mid), bh
 
     def equity(self, price):

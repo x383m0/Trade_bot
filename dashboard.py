@@ -3,7 +3,6 @@
 Usage: streamlit run dashboard.py
 Leave it open while train.py / paper_trade.py run — those sections refresh automatically.
 """
-import json
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from common import load_config, trade_rules
+from common import load_config, read_csv, read_json, trade_rules
 
 st.set_page_config(page_title="Trade_bot dashboard", page_icon="📈", layout="wide")
 cfg = load_config()
@@ -67,12 +66,14 @@ with tab_live:
         mode = st.radio("Mode", modes, horizontal=True, key="paper_mode",
                         format_func=lambda m: {"live": "Live prices", "replay": "Replay (demo)"}[m])
         folder = REPORT / f"paper_{mode}"
-        eq = pd.read_csv(folder / "equity.csv")
-        if eq.empty or not (folder / "state.json").exists():
+        eq = read_csv(folder / "equity.csv")
+        state = read_json(folder / "state.json")
+        if eq.empty or "equity" not in eq or not state:
             st.info("Started - waiting for the first closed bar…")
             return
-        state = json.loads((folder / "state.json").read_text())
-        trades = pd.read_csv(folder / "trades.csv")
+        trades = read_csv(folder / "trades.csv")
+        if "side" not in trades:              # trade log just being created
+            trades = pd.DataFrame(columns=["time", "side", "price", "fee_usd"])
         last = eq.iloc[-1]
         start = state["start_cash"]
         pnl = last["equity"] - start
@@ -185,15 +186,15 @@ with tab_train:
     @st.fragment(run_every="5s")
     def training_section():
         logs = sorted(REPORT.glob("training_log_seed*.csv"), key=lambda f: f.stat().st_mtime)
-        frames = [d for d in (pd.read_csv(f) for f in logs) if not d.empty]
+        frames = [d for d in (read_csv(f) for f in logs) if not d.empty and "seed" in d]
         if not frames:
             st.info("No training yet. Run `python train.py` — this page updates live."
                     if not logs else "Training started, waiting for the first validation checkpoint…")
             return
         df = pd.concat(frames, ignore_index=True)
         run_f, sum_f = REPORT / "train_run.json", REPORT / "seeds_summary.csv"
-        run = (json.loads(run_f.read_text()) if run_f.exists()
-               else {"seeds": sorted(df["seed"].unique()), "timesteps": cfg["train"]["total_timesteps"]})
+        run = read_json(run_f) or {"seeds": sorted(df["seed"].unique()),
+                                   "timesteps": cfg["train"]["total_timesteps"]}
         seeds, target = run["seeds"], run["timesteps"]
         finished = sum_f.exists()
 
@@ -266,8 +267,9 @@ with tab_train:
             st.caption("If it only works on one coin, it probably memorized that coin. "
                        "A real pattern should help on all of them.")
 
-        if finished:
-            summ = pd.read_csv(sum_f)
+        summ = read_csv(sum_f) if finished else pd.DataFrame()
+        if "chosen" in summ and summ["chosen"].astype(bool).any():
+            summ["chosen"] = summ["chosen"].astype(bool)
             st.subheader("Seed comparison")
             chosen = int(summ.loc[summ["chosen"], "seed"].iloc[0])
             st.markdown(f"Best checkpoint of each seed on validation. **Seed {chosen}** was "
@@ -291,14 +293,18 @@ with tab_train:
 
 
 # ---------------- Backtest ----------------
-with tab_bt:
+def backtest_section():
     splits = [s for s in ("val", "test") if (REPORT / f"equity_{s}.csv").exists()]
     if not splits:
         st.info("No backtest yet. Run `python backtest.py --split val`.")
     else:
         split = st.radio("Split", splits, horizontal=True)
-        eq = pd.read_csv(REPORT / f"equity_{split}.csv", parse_dates=["time"])
-        mt = pd.read_csv(REPORT / f"metrics_{split}.csv", index_col=0)
+        eq = read_csv(REPORT / f"equity_{split}.csv", parse_dates=["time"])
+        mt = read_csv(REPORT / f"metrics_{split}.csv", index_col=0)
+        if eq.empty or "PPO agent" not in mt.index or "Buy & hold" not in mt.index:
+            st.info("This backtest's files are incomplete (still being written, or the run was "
+                    f"stopped). Run `python backtest.py --split {split}` again.")
+            return
 
         a, b = mt.loc["PPO agent"], mt.loc["Buy & hold"]
         c = st.columns(4)
@@ -336,7 +342,7 @@ with tab_bt:
 
         st.subheader("Metrics")
         mk_f = REPORT / f"monkey_{split}.json"
-        mk = json.loads(mk_f.read_text()) if mk_f.exists() else None
+        mk = read_json(mk_f)
         label = mk["agent_label"] if mk else "PPO agent"
         if mk and mk.get("symbol"):
             st.caption(f"Coin tested: **{mk['symbol']}** (`python backtest.py --symbol ETH/USD` to test another)")
@@ -373,7 +379,7 @@ with tab_bt:
                            "middle of the pack. Aim for 95%+.")
                 mf = REPORT / f"monkeys_{split}.csv"
                 if mf.exists():
-                    mon = pd.read_csv(mf)["return_%"]
+                    mon = read_csv(mf).get("return_%", pd.Series(dtype=float))
                     h = go.Figure(go.Histogram(x=mon, nbinsx=50, name="random traders",
                                                marker_color="#c7c7c7"))
                     h.add_vline(x=mk["agent_return_%"], line_color="#1f77b4", line_width=3,
@@ -387,6 +393,10 @@ with tab_bt:
                     st.plotly_chart(h, width="stretch", key="monkey_hist", config=PLOT_CONFIG)
 
 
+with tab_bt:
+    backtest_section()
+
+
 # ---------------- Walk-forward ----------------
 with tab_wf:
     @st.fragment(run_every="10s")
@@ -397,9 +407,9 @@ with tab_wf:
             st.info("No walk-forward test yet. Run `python walkforward.py` - it trains and tests the "
                     "bot on several periods in a row, so one lucky backtest can't fool you.")
             return
-        run = json.loads((wf_dir / "run.json").read_text()) if (wf_dir / "run.json").exists() else {}
-        res = pd.DataFrame([json.loads(f.read_text()) for f in fold_files])
-        if run.get("signature"):
+        run = read_json(wf_dir / "run.json", default={})
+        res = pd.DataFrame([r for r in (read_json(f) for f in fold_files) if r])
+        if run.get("signature") and "signature" in res:
             res = res[res["signature"] == run["signature"]]   # only folds of the current settings
         if res.empty:
             st.info("Walk-forward started with new settings - waiting for the first period to finish.")
@@ -441,7 +451,9 @@ with tab_wf:
             ef = f.parent / "equity.csv"
             if not ef.exists() or f.parent.name[4:] not in map(str, res["fold"]):
                 continue
-            e = pd.read_csv(ef)
+            e = read_csv(ef)
+            if e.empty or "bot" not in e:
+                continue
             e["bot"], e["buy_hold"] = e["bot"] * b_lvl, e["buy_hold"] / e["buy_hold"].iloc[0] * h_lvl
             b_lvl, h_lvl = e["bot"].iloc[-1], e["buy_hold"].iloc[-1]
             curves.append(e)

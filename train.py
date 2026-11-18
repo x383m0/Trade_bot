@@ -26,7 +26,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 
-from common import load_config, load_splits, make_env, metrics, pair_of, save_norm
+from common import load_config, load_splits, make_env, metrics, pair_of, save_norm, write_json
 
 
 def run_episodes_fast(model, envs):
@@ -245,9 +245,9 @@ def main():
     for old in list(report.glob("training_log*.csv")) + [report / "seeds_summary.csv"]:
         old.unlink(missing_ok=True)  # clear the previous run so the dashboard isn't confused
     seeds = [cfg["train"]["seed"] + i for i in range(args.seeds)]
-    (report / "train_run.json").write_text(json.dumps(
-        {"seeds": seeds, "timesteps": args.timesteps or None, "coins": list(splits),
-         "started": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=1))
+    write_json(report / "train_run.json",
+               {"seeds": seeds, "timesteps": args.timesteps or None, "coins": list(splits),
+                "started": time.strftime("%Y-%m-%d %H:%M:%S")})
 
     if not args.timesteps:
         print(f"\nUNLIMITED training: press Ctrl+C when you want to stop. The best checkpoint "
@@ -263,11 +263,12 @@ def main():
     summary = summary.rename(columns={"timesteps": "best_at_step"})
     winner = summary.loc[summary["val_return_%"].idxmax()]
     summary["chosen"] = summary["seed"] == winner["seed"]
-    summary.to_csv(report / "seeds_summary.csv", index=False)
+    summary.to_csv(report / "seeds_summary.csv.tmp", index=False)
+    os.replace(report / "seeds_summary.csv.tmp", report / "seeds_summary.csv")   # appears complete
     shutil.copy(f"{main_path}_seed{int(winner['seed'])}.zip", f"{main_path}.zip")
     # all seeds of this run, for ensemble voting (agents.py)
-    Path(f"{main_path}_ensemble.json").write_text(json.dumps(
-        {"seeds": seeds, "models": [f"{main_path}_seed{s}" for s in seeds]}, indent=1))
+    write_json(f"{main_path}_ensemble.json",
+               {"seeds": seeds, "models": [f"{main_path}_seed{s}" for s in seeds]})
 
     r = summary["val_return_%"]
     print("\n=== summary (best checkpoint of each seed; val_return_% = average over coins) ===")

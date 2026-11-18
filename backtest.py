@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from agents import load_agent, load_seed_models
-from common import load_config, load_splits, make_env, metrics, trade_cost, trade_rules
+from common import load_config, load_splits, make_env, metrics, trade_cost, trade_rules, write_json
 from train import run_episode
 
 
@@ -137,7 +137,7 @@ def main():
                  ).to_csv(out / f"equity_{args.split}.csv", index=False)
     table.to_csv(out / f"metrics_{args.split}.csv")
     pd.DataFrame({"return_%": monkeys.round(3)}).to_csv(out / f"monkeys_{args.split}.csv", index=False)
-    (out / f"monkey_{args.split}.json").write_text(json.dumps(monkey, indent=1))
+    write_json(out / f"monkey_{args.split}.json", monkey)
 
     plt.figure(figsize=(11, 5))
     plt.plot(ts, agent_eq, label=agent_label)
