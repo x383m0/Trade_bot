@@ -14,8 +14,8 @@ train_symbols:            # coins it LEARNS from - more variety = less memorizin
   - BTC/USD
   - ETH/USD
   - SOL/USD
-timeframe: 15m            # candle size: 5m / 15m / 1h. For 1h set years ~8           (re-fetch, retrain)
-years: 4                  # history to download. 4 years includes bear markets (2022), not just bull runs (re-fetch, retrain)
+timeframe: 1h             # candle size: 5m / 15m / 1h. For 1h set years ~8           (re-fetch, retrain)
+years: 8                  # history to download. 4 years includes bear markets (2022), not just bull runs (re-fetch, retrain)
 
 # --- costs (what Kraken charges) ---
 fee: 0.004                # 0.40% per side = taker (market order) fee, lowest tier. Used by market
