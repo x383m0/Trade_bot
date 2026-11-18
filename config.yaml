@@ -6,7 +6,10 @@
 # --- market ---
 exchange: kraken          # where the bot trades (live/paper prices). Available in Canada.
 data_exchange: coinbase   # where training history comes from (Kraken's API only returns ~720 candles)
-symbol: BTC/USD           # the coin the bot TRADES                                   (re-fetch, retrain)
+symbol: BTC/USD           # the coin the bot TRADES (training data for it)              (re-fetch, retrain)
+live_symbol: BTC/CAD      # pair used for paper/live trading on `exchange`. BTC/CAD = trade in Canadian
+                          # dollars (no USD conversion fees). Same % moves as BTC/USD, so the model
+                          # trained on USD data works. Set to BTC/USD to trade in USD.
 train_symbols:            # coins it LEARNS from - more variety = less memorizing     (re-fetch, retrain)
   - BTC/USD
   - ETH/USD

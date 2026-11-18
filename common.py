@@ -17,6 +17,7 @@ def load_config(path="config.yaml"):
     with open(path) as f:
         cfg = yaml.safe_load(f)
     cfg.setdefault("data_exchange", cfg["exchange"])
+    cfg["live_symbol"] = cfg.get("live_symbol") or cfg["symbol"]   # pair used for paper/live trading
     # the coin we trade is always part of training
     train = list(dict.fromkeys(cfg.get("train_symbols") or [cfg["symbol"]]))
     if cfg["symbol"] not in train:

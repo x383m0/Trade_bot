@@ -32,7 +32,7 @@ def check(name, symbol, timeframe):
     if not first:
         return "listed, but no candles returned"
     start = pd.to_datetime(first[0][0], unit="ms")
-    years = (pd.Timestamp.utcnow().tz_localize(None) - start).days / 365
+    years = (pd.Timestamp.now("UTC").tz_localize(None) - start).days / 365
     note = ""
     if name == "kraken" and years < 0.5:
         note = "  (Kraken's API only serves the last 720 candles - full history needs their CSV downloads)"

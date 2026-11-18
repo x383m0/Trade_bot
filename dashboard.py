@@ -75,7 +75,8 @@ with tab_live:
         pnl = last["equity"] - start
 
         c = st.columns(5)
-        c[0].metric("Fake balance", f"${last['equity']:.2f}", f"{pnl:+.2f} ({pnl / start * 100:+.1f}%)")
+        cur = state.get("currency", "USD")
+        c[0].metric(f"Fake balance ({cur})", f"${last['equity']:.2f}", f"{pnl:+.2f} ({pnl / start * 100:+.1f}%)")
         c[1].metric("vs buy & hold", f"${last['buy_hold']:.2f}",
                     f"{last['equity'] - last['buy_hold']:+.2f}")
         c[2].metric("Holding", "₿ BTC" if state["pos"] else "💵 Cash",
@@ -129,8 +130,8 @@ with tab_live:
 
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
                             vertical_spacing=0.05,
-                            subplot_titles=(f"{cfg['symbol']} {cfg['timeframe']} & trades",
-                                            "Fake balance ($)"))
+                            subplot_titles=(f"{state.get('symbol', cfg['symbol'])} {cfg['timeframe']} & trades",
+                                            f"Fake balance ({cur})"))
         fig.add_trace(price_trace(view, "price"), 1, 1)
         trade_markers(fig, tr[tr["side"] == "BUY"], tr[tr["side"] == "SELL"], 1)
         fig.add_trace(go.Scatter(x=view["time"], y=view["equity"], name="bot",

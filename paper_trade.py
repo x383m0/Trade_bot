@@ -35,7 +35,7 @@ class PaperAccount:
                  "position", "action"]
     TR_FIELDS = ["time", "side", "price", "qty_btc", "fee_usd", "equity_after"]
 
-    def __init__(self, folder, starting_cash, fee, reset=False):
+    def __init__(self, folder, starting_cash, fee, reset=False, symbol="BTC/USD"):
         self.dir = Path(folder)
         if reset and self.dir.exists():
             shutil.rmtree(self.dir)
@@ -45,12 +45,17 @@ class PaperAccount:
         self.eq_f, self.tr_f = self.dir / "equity.csv", self.dir / "trades.csv"
         if self.eq_f.exists() and self.eq_f.read_text().split("\n", 1)[0] != ",".join(self.EQ_FIELDS):
             raise SystemExit("Log files are from an older version - rerun with --reset to start fresh.")
+        self.base, self.cur = symbol.split("/")
         if self.state_f.exists():
             self.s = json.loads(self.state_f.read_text())
-            print(f"resuming: ${self.s['cash']:.2f} cash + {self.s['btc']:.8f} BTC, "
+            if self.s.get("symbol", "BTC/USD") != symbol:
+                raise SystemExit(f"This paper account trades {self.s.get('symbol', 'BTC/USD')}, but the "
+                                 f"config now says {symbol} - rerun with --reset to start fresh.")
+            print(f"resuming: {self.s['cash']:.2f} {self.cur} cash + {self.s['btc']:.8f} {self.base}, "
                   f"{self.s['n_trades']} trades so far")
         else:
-            self.s = {"cash": float(starting_cash), "btc": 0.0, "pos": 0,
+            self.s = {"symbol": symbol, "currency": self.cur,
+                      "cash": float(starting_cash), "btc": 0.0, "pos": 0,
                       "start_cash": float(starting_cash), "start_price": None,
                       "last_bar_ts": None, "n_trades": 0,
                       "started": datetime.now(timezone.utc).isoformat(timespec="seconds")}
@@ -117,10 +122,10 @@ def decide(model, norm, cfg, bars, acct):
 
 
 def log_line(bar_ts, price, action, acct, eq, bh, votes=""):
-    pos = "LONG BTC" if acct.s["pos"] else "CASH    "
+    pos = f"LONG {acct.base:<4}" if acct.s["pos"] else "CASH     "
     v = f"  votes {votes}" if votes else ""
     print(f"{fmt_ts(bar_ts)}  price {price:>10.2f}  action {'long' if action else 'flat'}{v}  "
-          f"-> {pos}  equity ${eq:7.2f}  (buy&hold ${bh:7.2f})  trades {acct.s['n_trades']}")
+          f"-> {pos}  equity {eq:7.2f} {acct.cur}  (buy&hold {bh:7.2f})  trades {acct.s['n_trades']}")
 
 
 def run_replay(cfg, model, norm, acct, delay, max_bars):
@@ -155,11 +160,16 @@ def run_live(cfg, model, norm, acct):
     if cfg["exchange"] == "kraken" and hist > 720:
         print(f"WARNING: features need {hist} candles but Kraken only returns 720 - "
               "use a bigger timeframe (15m or 1h).")
-    print(f"paper trading {cfg['symbol']} on {cfg['exchange']} ({cfg['timeframe']} bars) "
-          f"- Ctrl+C to stop")
+    sym = cfg["live_symbol"]
+    ex.load_markets()
+    if sym not in ex.markets:
+        raise SystemExit(f"{cfg['exchange']} doesn't list {sym} - check live_symbol in config.yaml")
+    if sym != cfg["symbol"]:
+        print(f"model trained on {cfg['symbol']} data, trading {sym} (same % moves, different currency)")
+    print(f"paper trading {sym} on {cfg['exchange']} ({cfg['timeframe']} bars) - Ctrl+C to stop")
     while True:
         try:
-            raw = ex.fetch_ohlcv(cfg["symbol"], cfg["timeframe"], limit=hist)
+            raw = ex.fetch_ohlcv(sym, cfg["timeframe"], limit=hist)
             bars = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume"])
             bars = bars[bars["ts"] + tf_ms <= ex.milliseconds()].tail(hist)  # closed bars only
             bar_ts = int(bars["ts"].iloc[-1])
@@ -168,7 +178,7 @@ def run_live(cfg, model, norm, acct):
                 if action is None:
                     print("not enough history yet, waiting...")
                 else:
-                    tk = ex.fetch_ticker(cfg["symbol"])
+                    tk = ex.fetch_ticker(sym)
                     last = tk.get("last") or bars["close"].iloc[-1]
                     bid, ask = tk.get("bid") or last, tk.get("ask") or last
                     eq, bh = acct.step(bars.iloc[-1], action, bid, ask, model.votes_str())
@@ -197,8 +207,10 @@ def main():
     model = load_agent(cfg)
     norm = load_norm(cfg)
     mode = "replay" if args.replay else "live"
+    # replay uses the training data (symbol); live uses the live pair (e.g. BTC/CAD)
     acct = PaperAccount(Path(cfg["paths"]["report"]) / f"paper_{mode}",
-                        cfg["paper"]["starting_cash"], cfg["fee"], reset=args.reset)
+                        cfg["paper"]["starting_cash"], cfg["fee"], reset=args.reset,
+                        symbol=cfg["live_symbol"] if mode == "live" else cfg["symbol"])
     try:
         if args.replay:
             run_replay(cfg, model, norm, acct, args.delay, args.bars)
