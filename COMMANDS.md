@@ -101,14 +101,18 @@ Save each result with its own name so you can compare later, e.g.
 
 Limit orders on Kraken are the default (`orders.type: limit`, 0.25% maker fee).
 
+The bot makes every decision itself: no forced holding time (`min_hold: 0`) and no stop-loss
+(`stop_loss: 0`). Instead, training nudges it to learn caution on its own.
+
 | Run | Change in config.yaml | Then |
 |---|---|---|
 | 1. 1h + limit orders | `timeframe: 1h`, `years: 8` | fetch, train, backtest |
-| 2. + hold for days | `rules.min_hold: 24` (1 day on 1h), `rules.stop_loss: 0.05` | train, backtest |
+| 2. + learn caution | `trade_penalty: 0.002` (10x; a training-only cost, never real money) | train, backtest |
 | 3. + smarter reward | `reward.type: excess`, `reward.drawdown_penalty: 1.0` | train, backtest |
 
-Why hold for days: with Kraken's fees, trades shorter than ~1 day can't win even with very good
-predictions (a 1h move is ~0.5%, a limit round trip costs ~0.5%).
+Why caution matters: with Kraken's fees, trades shorter than ~1 day rarely win even with very good
+predictions (a 1h move is ~0.5%, a limit round trip costs ~0.5%). The hope is that the bot learns
+to trade less and hold longer by itself.
 
 Keep the changes from the previous run each time. Each run's question: did it beat the previous
 one **against buy & hold**, with fewer trades and a smaller drawdown?
