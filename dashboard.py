@@ -124,8 +124,9 @@ with tab_live:
         # attach candle high/low to trades so markers sit under/over the candle
         tr = trades.merge(eq[[c for c in ("time", "high", "low") if c in eq]], on="time", how="left")
         tr["marker_price"] = tr["price"]
-        tr["hover"] = (tr["side"] + " @ " + tr["price"].map("{:,.2f}".format) + "<br>fee $"
-                       + tr["fee_usd"].map("{:.3f}".format) + "<br>" + tr["time"])
+        # plain Python strings: works even when there are no trades (empty table)
+        tr["hover"] = [f"{sd} @ {p:,.2f}<br>fee {fee:.3f}<br>{t}"
+                       for sd, p, fee, t in zip(tr["side"], tr["price"], tr["fee_usd"], tr["time"])]
         tr = tr[tr["time"].isin(view["time"])].tail(1000)
 
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
@@ -308,7 +309,7 @@ with tab_bt:
         buys, sells = eq[chg > 0].copy(), eq[chg < 0].copy()
         for d, side in ((buys, "BUY"), (sells, "SELL")):
             d["marker_price"] = d["close"]
-            d["hover"] = side + " @ " + d["close"].map("{:,.2f}".format) + "<br>" + d["time"].astype(str)
+            d["hover"] = [f"{side} @ {c:,.2f}<br>{t}" for c, t in zip(d["close"], d["time"])]
         if len(buys) + len(sells) <= 3000:   # too many markers makes the chart unreadable
             trade_markers(fig, buys, sells, 1)
         fig.add_trace(go.Scatter(x=eq["time"], y=eq["agent"], name="PPO agent"), 2, 1)
