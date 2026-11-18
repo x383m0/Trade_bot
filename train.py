@@ -127,14 +127,58 @@ UNLIMITED = 10 ** 12   # "--timesteps 0": train until Ctrl+C
 INTERRUPTED = False
 
 
-def _train_seed_worker(seed, timesteps, model_path, log_path, threads):
+def _train_seed_worker(seed, timesteps, model_path, log_path, threads, fractions=None):
     """Runs in its own process (--parallel): loads the data itself and trains one seed,
     limited to `threads` CPU threads so parallel seeds don't fight over the cores."""
     import torch
     torch.set_num_threads(threads)
     cfg = load_config()
-    splits, _ = load_splits(cfg)
+    splits, _ = load_splits(cfg, fractions)
     return train_one(cfg, splits, seed, timesteps, model_path, log_path)
+
+
+def train_seeds(cfg, splits, seeds, timesteps, model_prefix, log_dir, parallel=1, fractions=None):
+    """Train several seeds (one after another, or `parallel` at a time). Each seed's best
+    checkpoint is saved to {model_prefix}_seed{N}.zip and its log to log_dir.
+    Returns (best rows of the seeds that saved a checkpoint, stopped_with_ctrl_c)."""
+    log_dir = Path(log_dir)
+    workers = max(1, min(parallel, len(seeds)))
+    if not timesteps and len(seeds) > workers:
+        workers = len(seeds)       # unlimited one-after-another would never reach seed 2
+    stopped = False
+    if workers == 1:
+        results = []
+        for i, seed in enumerate(seeds, 1):
+            print(f"\n=== seed {seed} ({i}/{len(seeds)}) ===")
+            results.append(train_one(cfg, splits, seed, timesteps, f"{model_prefix}_seed{seed}",
+                                     log_dir / f"training_log_seed{seed}.csv"))
+            if INTERRUPTED:
+                stopped = True
+                print("Ctrl+C: skipping the remaining seeds")
+                break
+    else:
+        cores = os.cpu_count() or 2
+        threads = max(1, cores // workers)
+        print(f"\n=== training {len(seeds)} seeds, {workers} at a time "
+              f"({cores} CPU threads -> {threads} per seed) ===")
+        # "spawn" works the same on Windows, Linux and Mac
+        with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn")) as ex:
+            futures = [ex.submit(_train_seed_worker, seed, timesteps, f"{model_prefix}_seed{seed}",
+                                 str(log_dir / f"training_log_seed{seed}.csv"), threads, fractions)
+                       for seed in seeds]
+            try:
+                for f in futures:
+                    f.result()
+            except KeyboardInterrupt:
+                stopped = True
+                print("\nCtrl+C: stopping all seeds and keeping their best checkpoints...")
+            results = []
+            for f in futures:
+                try:
+                    results.append(f.result())
+                except BaseException:   # a seed that was stopped before finishing setup
+                    results.append(None)
+    return [r for r in results if r], stopped
 
 
 def main():
@@ -167,45 +211,10 @@ def main():
         {"seeds": seeds, "timesteps": args.timesteps or None, "coins": list(splits),
          "started": time.strftime("%Y-%m-%d %H:%M:%S")}, indent=1))
 
-    workers = max(1, min(args.parallel, len(seeds)))
     if not args.timesteps:
-        if len(seeds) > workers:   # one after another would never get past the first seed
-            workers = len(seeds)
         print(f"\nUNLIMITED training: press Ctrl+C when you want to stop. The best checkpoint "
               f"of each seed is kept, then the summary and ensemble are written as usual.")
-    if workers == 1:
-        results = []
-        for i, seed in enumerate(seeds, 1):
-            print(f"\n=== seed {seed} ({i}/{len(seeds)}) ===")
-            best = train_one(cfg, splits, seed, args.timesteps, f"{main_path}_seed{seed}",
-                             report / f"training_log_seed{seed}.csv")
-            results.append(best)
-            if INTERRUPTED:
-                print("Ctrl+C: skipping the remaining seeds")
-                break
-    else:
-        cores = os.cpu_count() or 2
-        threads = max(1, cores // workers)
-        print(f"\n=== training {len(seeds)} seeds, {workers} at a time "
-              f"({cores} CPU threads -> {threads} per seed) ===")
-        # "spawn" works the same on Windows, Linux and Mac
-        with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn")) as ex:
-            futures = [ex.submit(_train_seed_worker, seed, args.timesteps, f"{main_path}_seed{seed}",
-                                 str(report / f"training_log_seed{seed}.csv"), threads)
-                       for seed in seeds]
-            try:
-                for f in futures:
-                    f.result()
-            except KeyboardInterrupt:
-                print("\nCtrl+C: stopping all seeds and keeping their best checkpoints...")
-            results = []
-            for f in futures:
-                try:
-                    results.append(f.result())
-                except BaseException:   # a seed that was stopped before finishing setup
-                    results.append(None)
-
-    results = [r for r in results if r]
+    results, _ = train_seeds(cfg, splits, seeds, args.timesteps, main_path, report, args.parallel)
     if not results:
         raise SystemExit("No checkpoint was saved yet (stopped before the first validation check).")
     seeds = [int(r["seed"]) for r in results]

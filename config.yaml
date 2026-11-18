@@ -66,7 +66,17 @@ train:
 # --- ensemble: all seeds vote every candle ---
 ensemble:
   enabled: true           # false = use only the single best seed
-  min_agree: 0.5          # share of agents that must agree to change position (strictly more than)
+  vote: soft              # soft = average how confident the seeds are (one sure seed can outweigh
+                          #        two unsure ones) | majority = strict yes/no vote (min_agree)
+  margin: 0.0             # soft vote: buy above 50%+margin, sell below 50%-margin (e.g. 0.05 = calmer)
+  min_agree: 0.5          # majority vote: share of agents that must agree (strictly more than)
+
+# --- walk-forward test (python walkforward.py): train + test on several periods in a row ---
+walkforward:
+  folds: 6                # number of test periods
+  start: 0.40             # periods cover 40%..85% of history; the last 15% (the normal
+  end: 0.85               #   --split test) is never touched, so it stays the final exam
+  timesteps: 300000       # training steps per seed per period (total = folds x seeds x this)
 
 monkey_runs: 1000         # random traders to compare against in backtest.py
 

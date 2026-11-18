@@ -35,8 +35,11 @@ def data_path(cfg, symbol):
                                         exchange=cfg["exchange"], data_exchange=cfg["data_exchange"])
 
 
-def load_splits(cfg):
+def load_splits(cfg, fractions=None):
     """Returns ({symbol: {train|val|test: (ohlcv_df, normalized_features_df)}}, norm_stats).
+
+    fractions = (val_start, test_start, test_end) as fractions of the traded coin's history.
+    Default: from config.yaml `split` (e.g. 0.70, 0.85, 1.0). Walk-forward passes its own.
 
     All coins are split on the SAME dates (taken from the traded coin), so no coin's training
     data overlaps the traded coin's validation/test period - otherwise correlated coins would
@@ -62,15 +65,18 @@ def load_splits(cfg):
     # split dates from the traded coin
     ts = raw[cfg["symbol"]][0]["ts"]
     n = len(ts)
-    cut_val = int(ts.iloc[int(n * cfg["split"]["train"])])
-    cut_test = int(ts.iloc[int(n * (cfg["split"]["train"] + cfg["split"]["val"]))])
+    if fractions is None:
+        fractions = (cfg["split"]["train"], cfg["split"]["train"] + cfg["split"]["val"], 1.0)
+    at = lambda frac: int(ts.iloc[min(n - 1, int(n * frac))])
+    cut_val, cut_test = at(fractions[0]), at(fractions[1])
+    cut_end = at(fractions[2]) if fractions[2] < 1.0 else int(ts.iloc[-1]) + 1
 
     splits, norm = {}, {"columns": None, "symbols": {}, "val_start_ts": cut_val,
                         "test_start_ts": cut_test, "timeframe": tf}
     for sym, (df, feats) in raw.items():
         parts = {"train": df["ts"] < cut_val,
                  "val": (df["ts"] >= cut_val) & (df["ts"] < cut_test),
-                 "test": df["ts"] >= cut_test}
+                 "test": (df["ts"] >= cut_test) & (df["ts"] < cut_end)}
         tr = feats[parts["train"]]
         if len(tr) < 1000:
             print(f"warning: {sym} has only {len(tr)} training bars - skipping it.")

@@ -6,12 +6,13 @@ Leave it open while train.py / paper_trade.py run — those sections refresh aut
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from common import load_config
+from common import load_config, trade_rules
 
 st.set_page_config(page_title="Trade_bot dashboard", page_icon="📈", layout="wide")
 cfg = load_config()
@@ -25,10 +26,12 @@ SEED_COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
 st.title("📈 Trade_bot dashboard")
 st.caption(f"{cfg['symbol']} · {cfg['timeframe']} · trades on {cfg['exchange']} · "
            f"trained on {cfg['data_exchange']} data · "
-           f"fee {cfg['fee']*100:.2f}% + slippage {cfg['slippage']*100:.2f}% per side")
+           + (f"limit orders, fee {trade_rules(cfg)['maker_fee']*100:.2f}% per side"
+              if trade_rules(cfg)["order_type"] == "limit" else
+              f"fee {cfg['fee']*100:.2f}% + slippage {cfg['slippage']*100:.2f}% per side"))
 
-tab_live, tab_train, tab_bt, tab_cfg = st.tabs(["🟢 Live (paper)", "Training progress",
-                                                "Backtest", "Config"])
+tab_live, tab_train, tab_bt, tab_wf, tab_cfg = st.tabs(["🟢 Live (paper)", "Training progress",
+                                                        "Backtest", "Walk-forward", "Config"])
 
 
 def price_trace(d, price_col="close"):
@@ -382,6 +385,84 @@ with tab_bt:
                                     yaxis_title="# random traders", showlegend=False,
                                     margin=dict(l=10, r=10, t=30, b=10))
                     st.plotly_chart(h, width="stretch", key="monkey_hist", config=PLOT_CONFIG)
+
+
+# ---------------- Walk-forward ----------------
+with tab_wf:
+    @st.fragment(run_every="10s")
+    def walkforward_section():
+        wf_dir = REPORT / "walkforward"
+        fold_files = sorted(wf_dir.glob("fold*/result.json"), key=lambda f: int(f.parent.name[4:]))
+        if not fold_files:
+            st.info("No walk-forward test yet. Run `python walkforward.py` - it trains and tests the "
+                    "bot on several periods in a row, so one lucky backtest can't fool you.")
+            return
+        run = json.loads((wf_dir / "run.json").read_text()) if (wf_dir / "run.json").exists() else {}
+        res = pd.DataFrame([json.loads(f.read_text()) for f in fold_files])
+        if run.get("signature"):
+            res = res[res["signature"] == run["signature"]]   # only folds of the current settings
+        if res.empty:
+            st.info("Walk-forward started with new settings - waiting for the first period to finish.")
+            return
+        total = run.get("folds", len(res))
+        won = int((res["bot_%"] > res["buy_hold_%"]).sum())
+        bot_total = (np.prod(1 + res["bot_%"] / 100) - 1) * 100
+        bh_total = (np.prod(1 + res["buy_hold_%"] / 100) - 1) * 100
+        if len(res) < total:
+            st.progress(len(res) / total, text=f"{len(res)} of {total} periods done (training continues "
+                                               "in the terminal; finished periods are kept)")
+        c = st.columns(4)
+        c[0].metric("Beat buy & hold", f"{won} / {len(res)} periods",
+                    "✅ consistent" if won / len(res) >= 0.7 else "🤔 mixed" if won / len(res) >= 0.4
+                    else "❌ mostly loses", delta_color="off")
+        c[1].metric("Avg difference per period", f"{res['excess_%'].mean():+.1f}%",
+                    help="Bot return minus buy & hold return, averaged over periods")
+        c[2].metric("All periods chained", f"{bot_total:+.1f}%", f"buy & hold {bh_total:+.1f}%",
+                    delta_color="off")
+        c[3].metric("Worst drop in a period", f"{res['bot_max_dd_%'].min():.1f}%",
+                    f"buy & hold {res['bh_max_dd_%'].min():.1f}%", delta_color="off")
+        st.caption("Each period: fresh bots trained only on data BEFORE it, then trading it unseen. "
+                   "The last part of history (the final exam) is never used here.")
+
+        labels = [f"{r.test_start}→{r.test_end}" for r in res.itertuples()]
+        bar = go.Figure()
+        bar.add_trace(go.Bar(x=labels, y=res["bot_%"], name="bot", marker_color="#1f77b4",
+                             text=res["bot_%"].map("{:+.1f}%".format), textposition="outside"))
+        bar.add_trace(go.Bar(x=labels, y=res["buy_hold_%"], name="buy & hold", marker_color="#ff7f0e",
+                             text=res["buy_hold_%"].map("{:+.1f}%".format), textposition="outside"))
+        bar.update_layout(barmode="group", height=360, yaxis_title="return % in the period",
+                          margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"),
+                          uirevision="wf_bar")
+        st.plotly_chart(bar, width="stretch", key="wf_bar", config=PLOT_CONFIG)
+
+        # stitched equity: each period starts where the previous one ended
+        curves, b_lvl, h_lvl = [], 1.0, 1.0
+        for f in fold_files:
+            ef = f.parent / "equity.csv"
+            if not ef.exists() or f.parent.name[4:] not in map(str, res["fold"]):
+                continue
+            e = pd.read_csv(ef)
+            e["bot"], e["buy_hold"] = e["bot"] * b_lvl, e["buy_hold"] / e["buy_hold"].iloc[0] * h_lvl
+            b_lvl, h_lvl = e["bot"].iloc[-1], e["buy_hold"].iloc[-1]
+            curves.append(e)
+        if curves:
+            eq = pd.concat(curves)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=eq["time"], y=eq["bot"], name="bot", line=dict(color="#1f77b4")))
+            fig.add_trace(go.Scatter(x=eq["time"], y=eq["buy_hold"], name="buy & hold",
+                                     line=dict(color="#ff7f0e", dash="dot")))
+            fig.add_hline(y=1, line_dash="dash", line_color="gray")
+            fig.update_layout(title="All test periods chained (start = 1.0)", height=360,
+                              margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation="h"),
+                              uirevision="wf_eq")
+            st.plotly_chart(fig, width="stretch", key="wf_eq", config=PLOT_CONFIG)
+
+        st.subheader("Periods")
+        cols = ["fold", "test_start", "test_end", "bot_%", "buy_hold_%", "excess_%", "trades",
+                "in_market_%", "bot_max_dd_%", "bh_max_dd_%", "monkey_beats_%"]
+        st.dataframe(res[[c for c in cols if c in res]], width="stretch", hide_index=True)
+
+    walkforward_section()
 
 
 # ---------------- Config ----------------

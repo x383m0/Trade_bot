@@ -57,6 +57,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--split", default="test", choices=["val", "test"])
     p.add_argument("--symbol", default=None, help="coin to test on (default: config symbol)")
+    p.add_argument("--vote", choices=["soft", "majority"], default=None,
+                   help="ensemble voting rule (default: ensemble.vote in config.yaml)")
     args = p.parse_args()
     cfg = load_config()
     sym = args.symbol or cfg["symbol"]
@@ -67,8 +69,8 @@ def main():
     tf = cfg["timeframe"]
     cost = trade_cost(cfg)
 
-    agent = load_agent(cfg)
-    agent_label = f"Ensemble ({len(agent)} seeds)" if len(agent) > 1 else "PPO agent"
+    agent = load_agent(cfg, vote=args.vote)
+    agent_label = agent.label()
     agent_eq, trades, positions = run_episode(agent, make_env(cfg, df, feats))
     start = cfg["train"]["window"] - 1
     close = df["close"].values[start:start + len(agent_eq)]

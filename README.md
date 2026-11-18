@@ -66,6 +66,15 @@ training, backtests and paper trading.
 - **Drawdown penalty** (`reward.drawdown_penalty`): extra penalty whenever equity sinks further
   below its peak.
 
+### Walk-forward test (`python walkforward.py`)
+
+One backtest period can make a bot look great or terrible by luck (our 15m validation was a -35%
+crash, our 1h one a +80% rally). Walk-forward splits 40%..85% of history into several periods
+and, for each one, trains fresh bots only on the data before it, picks checkpoints on the chunk
+right before it, then trades it unseen. Result: in how many periods the bot beat buy & hold, the
+average difference, and all periods chained together (dashboard tab **Walk-forward**).
+The last 15% of history is never touched, so `backtest.py --split test` stays the final exam.
+
 ### Multiple seeds
 
 RL results change a lot with the random seed: one run can look great purely by luck.
@@ -77,10 +86,11 @@ Training time = seeds × one run.
 
 ### Ensemble voting
 
-After a multi-seed run, `backtest.py` and `paper_trade.py` use **all seeds together**: every
-candle each agent votes flat/long, and the bot only changes position when a majority agrees
-(`ensemble.min_agree` in `config.yaml`). When the agents disagree it stays put, which means
-fewer trades and fewer fees. Set `ensemble.enabled: false` to use only the best single seed.
+After a multi-seed run, `backtest.py` and `paper_trade.py` use **all seeds together**. With
+`ensemble.vote: soft` (default) the bot averages how confident each seed is that holding is right
+and holds when the average is above 50%. `majority` is a strict yes/no vote (`min_agree`) that
+proved too strict: seeds that buy at different times rarely agree, so it sat in cash.
+Compare both with `python backtest.py --split val --vote majority`. Set `ensemble.enabled: false` to use only the best single seed.
 The backtest table also shows each seed on its own so you can see the spread.
 
 ### Monkey test (skill or luck?)

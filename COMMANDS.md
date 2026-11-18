@@ -55,6 +55,7 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 |---|---|
 | `python backtest.py --split val` | Test on the validation period (use this while experimenting) |
 | `python backtest.py --split val --symbol ETH/USD` | Test on another coin |
+| `python backtest.py --split val --vote majority` | Compare ensemble voting rules (`soft` / `majority`) without retraining |
 | `python backtest.py --split test` | **Final exam** — only once you're done tuning |
 | `python paper_trade.py --replay` | Watch the bot trade the test period candle by candle |
 | `python paper_trade.py --replay --reset` | Same, starting over with fresh $20 |
@@ -62,6 +63,17 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 | `python paper_trade.py --replay --bars 300` | Shorter replay (300 candles) |
 | `python paper_trade.py` | **Live** paper trading on real Kraken prices (fake money) |
 | `python paper_trade.py --reset` | Live, starting over with fresh fake $20 |
+
+| `python walkforward.py` | **Walk-forward test**: trains fresh bots and tests them on 6 periods in a row (see below) |
+| `python walkforward.py --folds 3 --timesteps 100000` | Quicker walk-forward to try settings |
+| `python walkforward.py --parallel 3` | Same, seeds trained at once (strong PC) |
+| `python walkforward.py --fresh` | Redo all periods (otherwise finished periods are reused) |
+
+**Walk-forward** is the most trustworthy test: for each period it trains new bots only on data
+*before* it, then lets them trade that period unseen. It reports in how many periods the bot beat
+buy & hold. It takes `folds × seeds × timesteps` steps (default 6 × 3 × 300k = 5.4M), so run it on
+the strong PC with `--parallel`. Ctrl+C pauses it; rerun the same command to continue.
+The last 15% of history is never used, so `--split test` stays the final exam.
 
 What to look at in a backtest:
 - **PPO agent vs Buy & hold**: does it beat just holding?
@@ -102,6 +114,8 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 | `train.gamma` | 0.99 | How far ahead it plans (0.995 = longer-term) | train |
 | `train.ent_coef` | 0.01 | Exploration (higher = tries more things) | train |
 | `ensemble.enabled` | true | false = use only the best seed | backtest / paper |
+| `ensemble.vote` | soft | `soft` = average the seeds' confidence; `majority` = strict yes/no vote | backtest / paper |
+| `ensemble.margin` | 0.0 | Soft vote: 0.05 = only change position when the seeds are >55% / <45% sure | backtest / paper |
 | `ensemble.min_agree` | 0.5 | Higher (e.g. 0.7) = needs more agents to agree → fewer trades | backtest / paper |
 | `paper.starting_cash` | 20 | Fake money for paper trading | paper `--reset` |
 
