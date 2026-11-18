@@ -1,5 +1,11 @@
 # Trade_bot — command cheat sheet
 
+> **Easiest:** `python menu.py` shows every command below as a numbered menu, runs the one you
+> pick, and prints the exact command it ran. Ctrl+C stops a command and returns to the menu.
+>
+> **Linux / Mac:** activate with `source .venv/bin/activate`, print files with `cat` instead of
+> `type`, and save output with `| tee file.txt` instead of `| Tee-Object -FilePath file.txt`.
+
 All commands run in **PowerShell**, inside the `Trade_bot` folder, with the environment active.
 
 ## Every time you open a new terminal
