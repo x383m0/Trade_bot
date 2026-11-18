@@ -73,7 +73,7 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 | `live_symbol` | BTC/CAD | Pair used for live paper trading on Kraken (BTC/CAD = Canadian dollars) | paper `--reset` |
 | `train_symbols` | BTC, ETH, SOL | Coins it learns from. Add e.g. `- XRP/USD`, `- LTC/USD` | fetch, train |
 | `timeframe` | 15m | Candle size: `5m`, `15m`, `1h` | fetch, train |
-| `years` | 2 | History to download (use ~8 with `1h`) | fetch, train |
+| `years` | 4 | History to download (use ~8 with `1h`) | fetch, train |
 | `fee` | 0.004 | Fee per trade (0.0025 = Kraken limit-order fee) | train |
 | `trade_penalty` | 0.0002 | Higher = bot trades less | train |
 | `train.total_timesteps` | 500000 | Training length per seed | train |

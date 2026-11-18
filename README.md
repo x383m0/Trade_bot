@@ -20,7 +20,7 @@ pip install -r requirements.txt
 ## Workflow
 
 ```bash
-python -m data.fetch              # download ~2 years of BTC, ETH, SOL candles from Coinbase
+python -m data.fetch              # download ~4 years of BTC, ETH, SOL candles from Coinbase
 python train.py                   # train 3 agents (seeds), keep the best one on the validation split
 python backtest.py --split val    # compare vs buy & hold / do nothing
 python paper_trade.py --replay    # watch it "trade" the held-out period bar by bar (fast demo)
