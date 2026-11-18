@@ -22,15 +22,25 @@ def check(name, symbol, timeframe):
     ex.load_markets()
     if symbol not in ex.markets:
         return "pair not listed"
-    since = ex.parse8601("2015-01-01T00:00:00Z")
     limit = LIMITS.get(name, 500)
-    first = ex.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-    if not first:
-        # some APIs return nothing for very old dates: try 2 years back
-        since = ex.milliseconds() - 2 * 365 * 86400 * 1000
-        first = ex.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
+    # Some APIs return nothing when the requested window is before the pair existed, so try
+    # each year from 2015 until one returns candles, then narrow down month by month.
+    now_year = pd.Timestamp.now("UTC").year
+    first, year = None, None
+    for y in range(2015, now_year + 1):
+        batch = ex.fetch_ohlcv(symbol, timeframe, since=ex.parse8601(f"{y}-01-01T00:00:00Z"), limit=limit)
+        if batch:
+            first, year = batch, y
+            break
     if not first:
         return "listed, but no candles returned"
+    if year > 2015:   # data starts sometime in the previous year? check its months
+        for m in range(1, 13):
+            batch = ex.fetch_ohlcv(symbol, timeframe, limit=limit,
+                                   since=ex.parse8601(f"{year - 1}-{m:02d}-01T00:00:00Z"))
+            if batch:
+                first = batch
+                break
     start = pd.to_datetime(first[0][0], unit="ms")
     years = (pd.Timestamp.now("UTC").tz_localize(None) - start).days / 365
     note = ""
