@@ -90,7 +90,7 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 | `train.total_timesteps` | 500000 | Training length per seed | train |
 | `train.n_seeds` | 3 | Agents per run | train |
 | `train.window` | 16 | Candles the agent looks back at | train |
-| `train.learning_rate` | 0.0003 | Lower = slower but steadier learning | train |
+| `train.learning_rate` | 0.0001 | Lower = slower but steadier learning (0.0003 was unstable) | train |
 | `train.gamma` | 0.99 | How far ahead it plans (0.995 = longer-term) | train |
 | `train.ent_coef` | 0.01 | Exploration (higher = tries more things) | train |
 | `ensemble.enabled` | true | false = use only the best seed | backtest / paper |
@@ -113,7 +113,7 @@ The bot makes every decision itself: no forced holding time (`min_hold: 0`) and 
 | Run | Change in config.yaml | Then |
 |---|---|---|
 | 1. 1h + limit orders | `timeframe: 1h`, `years: 8` | fetch, train, backtest |
-| 2. + learn caution | `trade_penalty: 0.002` (10x; a training-only cost, never real money) | train, backtest |
+| 2. + learn caution, steadier learning | `trade_penalty: 0.002` (10x; training-only cost), `train.learning_rate: 0.0001` | train, backtest |
 | 3. + smarter reward | `reward.type: excess`, `reward.drawdown_penalty: 1.0` | train, backtest |
 
 Why caution matters: with Kraken's fees, trades shorter than ~1 day rarely win even with very good

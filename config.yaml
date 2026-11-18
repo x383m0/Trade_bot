@@ -52,7 +52,9 @@ train:
   seed: 42                # first seed; extra seeds are 43, 44, ...
   n_seeds: 3              # agents trained per run (python train.py --seeds N to override)
   window: 16              # candles of history the agent sees each decision            (retrain)
-  learning_rate: 0.0003   # how big each learning step is. Lower = slower but steadier  (retrain)
+  learning_rate: 0.0001   # how big each learning step is. Lower = slower but steadier  (retrain)
+                          # Run 2: lowered from 0.0003 - in a test on a learnable pattern, 0.0003
+                          # kept un-learning and over-trading; 0.0001 learned it and stayed stable
   gamma: 0.99             # how far ahead it plans (0.99 ~ 100 bars, 0.999 ~ 1000)      (retrain)
   ent_coef: 0.01          # exploration: higher = tries more random actions early       (retrain)
 
