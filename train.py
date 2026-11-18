@@ -29,6 +29,31 @@ from stable_baselines3.common.env_util import make_vec_env
 from common import load_config, load_splits, make_env, metrics, pair_of, save_norm
 
 
+def run_episodes_fast(model, envs):
+    """Same result as run_episode() for each env, but all envs (one per coin) step together and
+    the network is called directly once per step for all of them -> several times faster.
+    Only for a single PPO model (training validation). Returns [(equity, n_trades), ...]."""
+    import torch
+    obs = [e.reset()[0] for e in envs]
+    curves = [[1.0] for _ in envs]
+    trades = [0] * len(envs)
+    live = list(range(len(envs)))
+    policy = model.policy
+    while live:
+        with torch.no_grad():
+            dist = policy.get_distribution(torch.as_tensor(np.stack([obs[i] for i in live])))
+            acts = dist.distribution.logits.argmax(dim=1).numpy()   # = deterministic predict
+        still = []
+        for i, a in zip(live, acts):
+            obs[i], _, done, _, info = envs[i].step(int(a))
+            curves[i].append(info["equity"])
+            trades[i] = info["n_trades"]
+            if not done:
+                still.append(i)
+        live = still
+    return [(np.array(c), n) for c, n in zip(curves, trades)]
+
+
 def run_episode(model, env):
     """Returns (equity curve, n_trades, positions). positions[i] = position held from bar i to i+1."""
     obs, _ = env.reset()
@@ -67,8 +92,8 @@ class ValCallback(BaseCallback):
     def _evaluate(self):
         self.last_eval = self.num_timesteps
         per = {}
-        for sym, env in self.val_envs.items():
-            eq, trades, _ = run_episode(self.model, env)
+        results = run_episodes_fast(self.model, list(self.val_envs.values()))
+        for sym, (eq, trades) in zip(self.val_envs, results):
             per[sym] = {**metrics(eq, self.timeframe), "trades": trades}
         avg = lambda k: float(np.mean([m[k] for m in per.values()]))
         ret = avg("total_return_%")
@@ -114,9 +139,11 @@ def train_one(cfg, splits, seed, timesteps, model_path, log_path):
     syms = list(splits)
     tr_df = [splits[s]["train"][0] for s in syms]
     tr_f = [splits[s]["train"][1] for s in syms]
-    venv = make_vec_env(lambda: make_env(cfg, tr_df, tr_f, episode_len=2000), n_envs=4, seed=seed)
     t = cfg["train"]
-    model = PPO("MlpPolicy", venv, seed=seed, verbose=0, n_steps=1024, batch_size=256,
+    venv = make_vec_env(lambda: make_env(cfg, tr_df, tr_f, episode_len=2000),
+                        n_envs=int(t.get("n_envs", 4)), seed=seed)
+    model = PPO("MlpPolicy", venv, seed=seed, verbose=0, n_steps=int(t.get("n_steps", 1024)),
+                batch_size=int(t.get("batch_size", 256)), n_epochs=int(t.get("n_epochs", 10)),
                 learning_rate=t.get("learning_rate", 3e-4), ent_coef=t.get("ent_coef", 0.01),
                 gamma=t.get("gamma", 0.99), device=t.get("device", "cpu"))
     val_envs = {s: make_env(cfg, *splits[s]["val"]) for s in syms}

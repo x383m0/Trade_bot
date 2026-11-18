@@ -59,9 +59,18 @@ train:
   threads: 2              # CPU threads per seed. 2 is fastest (measured); MORE threads is SLOWER here.
                           # To use a big CPU, train more seeds at once with --parallel instead
   window: 16              # candles of history the agent sees each decision            (retrain)
-  learning_rate: 0.0001   # how big each learning step is. Lower = slower but steadier  (retrain)
-                          # Run 2: lowered from 0.0003 - in a test on a learnable pattern, 0.0003
-                          # kept un-learning and over-trading; 0.0001 learned it and stayed stable
+  long_term_features: true  # also see 7/30/90-day trends and 30/200-day averages (from daily
+                          # candles), so it can tell a bull market dip from a bear market  (retrain)
+  # --- speed: the market simulation is fast, the network was the bottleneck ---
+  n_envs: 16              # market copies played at once (one network call for all of them)
+  n_steps: 256            # steps per copy before each learning round (16 x 256 = 4096 per round)
+  batch_size: 1024        # samples per learning update (bigger = fewer, faster updates)
+  n_epochs: 5             # passes over each round's experience
+  learning_rate: 0.0003   # how big each learning step is                                (retrain)
+                          # Measured on a learnable pattern: these settings run ~3x faster and
+                          # learn as well as the old ones (4 / 1024 / 256 / 10 / 0.0001).
+                          # Big batches need 0.0003: with 0.0001 they barely learned. (The old
+                          # small batches were unstable at 0.0003 - that's why it was 0.0001 before.)
   gamma: 0.99             # how far ahead it plans (0.99 ~ 100 bars, 0.999 ~ 1000)      (retrain)
   ent_coef: 0.01          # exploration: higher = tries more random actions early       (retrain)
 

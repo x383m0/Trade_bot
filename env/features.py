@@ -7,7 +7,9 @@ Horizons are defined in HOURS, so the same features work on 5m, 15m or 1h candle
 import numpy as np
 import pandas as pd
 
-LONGEST_HOURS = 96  # longest lookback below (4 days) - decides how much history live trading needs
+LONGEST_HOURS = 96  # longest INTRADAY lookback (4 days) - candles of history live trading needs
+LONG_TERM_DAYS = 200  # longest DAILY lookback (long-term trend features, from daily candles)
+DAILY_HISTORY = LONG_TERM_DAYS + 10   # completed daily candles live trading needs
 
 
 def bars_per_hour(timeframe: str) -> float:
@@ -20,7 +22,56 @@ def warmup_bars(timeframe: str) -> int:
     return int(np.ceil(LONGEST_HOURS * bars_per_hour(timeframe))) + 1
 
 
-def make_features(df: pd.DataFrame, timeframe: str = "15m") -> pd.DataFrame:
+def to_daily(df: pd.DataFrame) -> pd.DataFrame:
+    """Daily candles (UTC days) built from intraday candles. Same shape as an exchange's 1d OHLCV."""
+    t = pd.to_datetime(df["ts"], unit="ms").dt.floor("D")
+    g = df.groupby(t)
+    d = pd.DataFrame({"high": g["high"].max(), "low": g["low"].min(), "close": g["close"].last()})
+    d = d.asfreq("D").ffill()          # a day with no candles keeps the previous close
+    d["ts"] = (d.index - pd.Timestamp(0)) // pd.Timedelta(milliseconds=1)   # unit-safe (pandas 3)
+    return d.reset_index(drop=True)
+
+
+def long_term_features(df: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame:
+    """The big picture: is this a weeks/months-long uptrend or downtrend?
+
+    Built from DAILY candles, using only days that were already finished before the current
+    candle's day (no peeking), compared with the current price. Works live too: Kraken gives
+    720 daily candles, while its 720 hourly candles would only cover 30 days.
+    """
+    d = daily.sort_values("ts").reset_index(drop=True)
+    day = pd.to_datetime(d["ts"], unit="ms").dt.floor("D")
+    dc = d["close"].astype(float)
+    dr = np.log(dc).diff()
+    ref = pd.DataFrame({
+        "c7": dc.shift(6), "c30": dc.shift(29), "c90": dc.shift(89),
+        "ma30": dc.rolling(30).mean(), "ma200": dc.rolling(LONG_TERM_DAYS).mean(),
+        "hi90": d["high"].rolling(90).max(), "vol30": dr.rolling(30).std(),
+        "vol200": dr.rolling(LONG_TERM_DAYS).std(),
+    })
+    ref.index = day.values
+    # each candle uses the last COMPLETED day (the day before its own)
+    prev_day = pd.to_datetime(df["ts"], unit="ms").dt.floor("D") - pd.Timedelta(days=1)
+    r = ref.reindex(prev_day.values)
+    r.index = df.index
+    c = df["close"].astype(float)
+    f = pd.DataFrame(index=df.index)
+    f["ret_7d"] = np.log(c / r["c7"])
+    f["ret_30d"] = np.log(c / r["c30"])
+    f["ret_90d"] = np.log(c / r["c90"])
+    f["dist_ma_30d"] = c / r["ma30"] - 1
+    f["dist_ma_200d"] = c / r["ma200"] - 1
+    f["ma30_vs_ma200"] = r["ma30"] / r["ma200"] - 1          # "golden/death cross" regime
+    f["from_high_90d"] = c / r["hi90"] - 1                   # drawdown from the 90-day high
+    f["vol_30d"] = r["vol30"]
+    f["vol_regime_30d"] = np.log(r["vol30"] / (r["vol200"] + 1e-12) + 1e-12)
+    return f
+
+
+def make_features(df: pd.DataFrame, timeframe: str = "15m", long_term: bool = False,
+                  daily: pd.DataFrame = None) -> pd.DataFrame:
+    """long_term=True adds the daily trend features. `daily` = daily candles; if not given they
+    are built from `df` itself (fine for history; live trading passes the exchange's 1d candles)."""
     bph = bars_per_hour(timeframe)
     n = lambda hours: max(1, int(round(hours * bph)))   # hours -> number of bars
     c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
@@ -68,4 +119,7 @@ def make_features(df: pd.DataFrame, timeframe: str = "15m") -> pd.DataFrame:
     dow = t.dt.dayofweek + hour / 24
     f["dow_sin"], f["dow_cos"] = np.sin(2 * np.pi * dow / 7), np.cos(2 * np.pi * dow / 7)
 
+    if long_term:
+        lt = long_term_features(df, to_daily(df) if daily is None else daily)
+        f = pd.concat([f, lt], axis=1)
     return f.replace([np.inf, -np.inf], np.nan)

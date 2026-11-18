@@ -111,7 +111,9 @@ Open it in any text editor (Notepad, VS Code). After saving, rerun what the tabl
 | `train.total_timesteps` | 500000 | Training length per seed | train |
 | `train.n_seeds` | 3 | Agents per run | train |
 | `train.window` | 16 | Candles the agent looks back at | train |
-| `train.learning_rate` | 0.0001 | Lower = slower but steadier learning (0.0003 was unstable) | train |
+| `train.long_term_features` | true | Also see 7/30/90-day trends and the 30/200-day averages, so it can tell a bull market dip from a bear market | train |
+| `train.n_envs` / `n_steps` / `batch_size` / `n_epochs` | 16 / 256 / 1024 / 5 | Speed settings (~3x faster than the old 4 / 1024 / 256 / 10, tested to learn as well) | train |
+| `train.learning_rate` | 0.0003 | How big each learning step is. Goes with the speed settings: big batches need 0.0003 (0.0001 only suits the old small batches) | train |
 | `train.gamma` | 0.99 | How far ahead it plans (0.995 = longer-term) | train |
 | `train.ent_coef` | 0.01 | Exploration (higher = tries more things) | train |
 | `ensemble.enabled` | true | false = use only the best seed | backtest / paper |
@@ -174,3 +176,4 @@ years: 8
 | `Log files are from an older version` | Add `--reset` to the paper_trade command |
 | A coin fails to download | Check it exists on Coinbase as `XXX/USD`; the others still download |
 | Dashboard shows old numbers | It shows the `timeframe` currently in `config.yaml` |
+| `this model uses long-term features: pass daily candles` | Update the code (`git pull`) - paper trading fetches daily candles for these models |

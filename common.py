@@ -30,6 +30,11 @@ def load_config(path="config.yaml"):
     return cfg
 
 
+def long_term(cfg):
+    """Long-term trend features on? (train.long_term_features in config.yaml)"""
+    return bool(cfg["train"].get("long_term_features", False))
+
+
 def data_path(cfg, symbol):
     return cfg["_data_template"].format(timeframe=cfg["timeframe"], pair=pair_of(symbol),
                                         exchange=cfg["exchange"], data_exchange=cfg["data_exchange"])
@@ -58,7 +63,7 @@ def load_splits(cfg, fractions=None):
             print(f"warning: no data for {sym} ({data_path(cfg, sym)}) - skipping it. "
                   "Run `python -m data.fetch` to download it.")
             continue
-        feats = make_features(df, tf)
+        feats = make_features(df, tf, long_term=long_term(cfg))
         ok = feats.notna().all(axis=1)
         raw[sym] = (df[ok].reset_index(drop=True), feats[ok].reset_index(drop=True))
 
@@ -72,7 +77,7 @@ def load_splits(cfg, fractions=None):
     cut_end = at(fractions[2]) if fractions[2] < 1.0 else int(ts.iloc[-1]) + 1
 
     splits, norm = {}, {"columns": None, "symbols": {}, "val_start_ts": cut_val,
-                        "test_start_ts": cut_test, "timeframe": tf}
+                        "test_start_ts": cut_test, "timeframe": tf, "long_term": long_term(cfg)}
     for sym, (df, feats) in raw.items():
         parts = {"train": df["ts"] < cut_val,
                  "val": (df["ts"] >= cut_val) & (df["ts"] < cut_test),
@@ -116,10 +121,15 @@ def required_history(cfg):
     return warmup_bars(cfg["timeframe"]) + cfg["train"]["window"] + 20
 
 
-def live_observation(bars: pd.DataFrame, norm, symbol, window, pos, upnl_log=0.0, held=0):
-    """Build the same observation the env gives at the LAST bar of `bars`."""
+def live_observation(bars: pd.DataFrame, norm, symbol, window, pos, upnl_log=0.0, held=0,
+                     daily: pd.DataFrame = None):
+    """Build the same observation the env gives at the LAST bar of `bars`.
+    `daily` = daily candles (needed when the model uses long-term features)."""
     st = norm["symbols"][symbol]
-    feats = make_features(bars, norm["timeframe"])[norm["columns"]]
+    lt = norm.get("long_term", False)        # follow the MODEL's setting, not the current config
+    if lt and daily is None:
+        raise ValueError("this model uses long-term features: pass daily candles")
+    feats = make_features(bars, norm["timeframe"], long_term=lt, daily=daily)[norm["columns"]]
     feats = (feats - np.array(st["mean"])) / np.array(st["std"])
     last = feats.iloc[-window:]
     if len(last) < window or last.isna().any().any():

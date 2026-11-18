@@ -40,6 +40,11 @@ prices, so they work on any coin and any year), each in hours so they work on an
 - **Trend**: distance from the 1-day and 4-day average price
 - **Range**: where price sits between its recent low and high (1 day, 4 days), distance from the 4-day high
 - **Volume spikes**, **RSI**, **hour of day** and **day of week**
+- **Long-term trend** (`train.long_term_features`): 7/30/90-day price change, distance from the
+  30-day and 200-day averages, 30 vs 200-day average, drawdown from the 90-day high, 30-day
+  volatility. Built from daily candles using only days already finished (live: Kraken's daily
+  candles). Without them the bot only saw 4 days back and couldn't tell a dip in a bull market
+  from a dip in a months-long crash - which is how seed 43 lost 70% on the test period.
 - **Its own position**: holding or not, profit/loss of the open trade, how long it's been open
 
 ### Learning from several coins

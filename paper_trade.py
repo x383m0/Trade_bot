@@ -21,6 +21,7 @@ import numpy as np
 
 from agents import load_agent
 from common import live_observation, load_config, load_norm, required_history, trade_rules
+from env.features import DAILY_HISTORY, to_daily
 from env.trading_env import apply_rules, limit_filled
 
 
@@ -141,10 +142,10 @@ class PaperAccount:
         return self.s["cash"] + self.s["btc"] * price
 
 
-def decide(model, norm, cfg, bars, acct):
+def decide(model, norm, cfg, bars, acct, daily=None):
     s = acct.s
     obs = live_observation(bars, norm, cfg["symbol"], cfg["train"]["window"], s["pos"],
-                           acct.upnl(float(bars["close"].iloc[-1])), s.get("held", 0))
+                           acct.upnl(float(bars["close"].iloc[-1])), s.get("held", 0), daily)
     if obs is None:
         return None
     action, _ = model.predict(obs, deterministic=True)
@@ -167,12 +168,14 @@ def run_replay(cfg, model, norm, acct, delay, max_bars):
     end = len(df) if max_bars is None else min(len(df), start + max_bars)
     slip = cfg["slippage"]
     hist = required_history(cfg)
+    # daily candles for long-term features (each bar only uses days finished before it)
+    daily = to_daily(df) if norm.get("long_term") else None
     print(f"replaying {end - start} bars of {cfg['timeframe']} "
           f"({fmt_ts(df['ts'].iloc[start])} -> {fmt_ts(df['ts'].iloc[end - 1])})")
     for i in range(start, end):
         bars = df.iloc[max(0, i - hist + 1): i + 1]
         acct.begin_bar(df.iloc[i])
-        action = decide(model, norm, cfg, bars, acct)
+        action = decide(model, norm, cfg, bars, acct, daily)
         if action is None:
             continue
         price = df["close"].iloc[i]
@@ -205,8 +208,12 @@ def run_live(cfg, model, norm, acct):
             bars = bars[bars["ts"] + tf_ms <= ex.milliseconds()].tail(hist)  # closed bars only
             bar_ts = int(bars["ts"].iloc[-1])
             if bar_ts != acct.s["last_bar_ts"]:
+                daily = None
+                if norm.get("long_term"):     # long-term trend features need daily candles
+                    rawd = ex.fetch_ohlcv(sym, "1d", limit=DAILY_HISTORY + 5)
+                    daily = pd.DataFrame(rawd, columns=["ts", "open", "high", "low", "close", "volume"])
                 acct.begin_bar(bars.iloc[-1])
-                action = decide(model, norm, cfg, bars, acct)
+                action = decide(model, norm, cfg, bars, acct, daily)
                 if action is None:
                     print("not enough history yet, waiting...")
                 else:
