@@ -21,7 +21,8 @@ years: 8                  # history to download. 4 years includes bear markets (
 fee: 0.004                # 0.40% per side = taker (market order) fee, lowest tier. Used by market
                           # orders and stop-loss exits; limit orders pay orders.maker_fee   (retrain)
 slippage: 0.0005          # 0.05% per side - price moving against you while filling   (retrain)
-trade_penalty: 0.0002     # extra training penalty per trade -> discourages over-trading (retrain)
+trade_penalty: 0.002      # extra TRAINING-ONLY penalty per trade -> teaches caution (retrain).
+                          # Run 2: raised 10x from 0.0002 (run 1 made 450 trades)
 
 # --- trading rules (apply to training, backtests and paper trading)                (retrain) ---
 orders:
