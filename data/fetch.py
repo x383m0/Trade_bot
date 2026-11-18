@@ -18,6 +18,23 @@ from common import data_path, load_config
 LIMITS = {"coinbase": 300, "kraken": 720, "bitstamp": 1000, "ndax": 1000}
 
 
+def fetch_with_retry(ex, symbol, timeframe, since, limit, tries=8):
+    """Exchanges limit how many requests you can make; if we hit the limit (or the network
+    hiccups), wait and try again with growing pauses instead of giving up."""
+    import ccxt
+
+    wait = 5
+    for attempt in range(tries):
+        try:
+            return ex.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
+        except (ccxt.RateLimitExceeded, ccxt.DDoSProtection, ccxt.NetworkError) as e:
+            if attempt == tries - 1:
+                raise
+            print(f"\n  {type(e).__name__} - waiting {wait}s and retrying...", end="")
+            time.sleep(wait)
+            wait = min(wait * 2, 120)
+
+
 def fetch_ohlcv(cfg, symbol):
     import ccxt
 
@@ -32,12 +49,13 @@ def fetch_ohlcv(cfg, symbol):
     since = now - int(cfg["years"] * 365 * 24 * 3600 * 1000)
     rows = []
     while since < now:
-        batch = ex.fetch_ohlcv(symbol, cfg["timeframe"], since=since, limit=limit)
+        batch = fetch_with_retry(ex, symbol, cfg["timeframe"], since, limit)
         if batch:
             rows += batch
             since = batch[-1][0] + tf_ms
-        else:  # gap with no data - skip ahead
+        else:  # gap with no data (e.g. the coin wasn't listed yet) - skip ahead, gently
             since += limit * tf_ms
+            time.sleep(max(ex.rateLimit / 1000, 0.5))
         print(f"\r{symbol}: fetched {len(rows)} candles "
               f"(up to {pd.to_datetime(since, unit='ms'):%Y-%m-%d})", end="")
     print()
