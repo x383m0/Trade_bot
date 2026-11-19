@@ -96,6 +96,24 @@ def data_path(cfg, symbol):
                                         exchange=cfg["exchange"], data_exchange=cfg["data_exchange"])
 
 
+GAP_DAYS = 2   # a hole longer than this in a coin's history splits it into separate pieces
+
+
+def split_at_gaps(df, max_gap_days=GAP_DAYS):
+    """Row positions of each unbroken piece of history. Some coins have holes: e.g. Coinbase
+    delisted XRP from Jan 2021 to mid-2023. Joining across a hole would look like one candle with a
+    2-year price move, and indicators would mix data from both sides."""
+    ts = df["ts"].values
+    cut = np.where(np.diff(ts) > max_gap_days * 86_400_000)[0] + 1
+    return np.split(np.arange(len(df)), cut)
+
+
+def pieces(df, feats, min_len):
+    """[(df, feats)] for each unbroken piece with at least `min_len` candles."""
+    return [(df.iloc[i].reset_index(drop=True), feats.iloc[i].reset_index(drop=True))
+            for i in split_at_gaps(df) if len(i) >= min_len]
+
+
 def load_splits(cfg, fractions=None):
     """Returns ({symbol: {train|val|test: (ohlcv_df, normalized_features_df)}}, norm_stats).
 
@@ -119,7 +137,15 @@ def load_splits(cfg, fractions=None):
             print(f"warning: no data for {sym} ({data_path(cfg, sym)}) - skipping it. "
                   "Run `python -m data.fetch` to download it.")
             continue
-        feats = make_features(df, tf, long_term=long_term(cfg))
+        segs = split_at_gaps(df)
+        if len(segs) > 1:
+            gaps = [f"{pd.to_datetime(df['ts'].iloc[a[-1]], unit='ms').date()} -> "
+                    f"{pd.to_datetime(df['ts'].iloc[b[0]], unit='ms').date()}" for a, b in zip(segs, segs[1:])]
+            print(f"note: {sym} has holes in its history ({', '.join(gaps)}) - each side is used separately")
+        # indicators are computed on each unbroken piece (the first days after a hole get dropped below,
+        # until there is enough history again)
+        feats = pd.concat([make_features(df.iloc[i].reset_index(drop=True), tf, long_term=long_term(cfg))
+                           for i in segs], ignore_index=True)
         ok = feats.notna().all(axis=1)
         raw[sym] = (df[ok].reset_index(drop=True), feats[ok].reset_index(drop=True))
 

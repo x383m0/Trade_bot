@@ -26,7 +26,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 
-from common import load_config, load_splits, make_env, metrics, pair_of, save_norm, write_json
+from common import load_config, load_splits, make_env, metrics, pair_of, pieces, save_norm, write_json
 
 
 def run_episodes_fast(model, envs):
@@ -137,16 +137,25 @@ def torch_threads(cfg, workers=1):
 
 def train_one(cfg, splits, seed, timesteps, model_path, log_path):
     syms = list(splits)
-    tr_df = [splits[s]["train"][0] for s in syms]
-    tr_f = [splits[s]["train"][1] for s in syms]
     t = cfg["train"]
+    w = int(t["window"])
+    tr = [p for s in syms for p in pieces(*splits[s]["train"], min_len=w + 200)]   # unbroken pieces only
+    tr_df, tr_f = [p[0] for p in tr], [p[1] for p in tr]
     venv = make_vec_env(lambda: make_env(cfg, tr_df, tr_f, episode_len=int(t.get("episode_len", 2000))),
                         n_envs=int(t.get("n_envs", 4)), seed=seed)
     model = PPO("MlpPolicy", venv, seed=seed, verbose=0, n_steps=int(t.get("n_steps", 1024)),
                 batch_size=int(t.get("batch_size", 256)), n_epochs=int(t.get("n_epochs", 10)),
                 learning_rate=t.get("learning_rate", 3e-4), ent_coef=t.get("ent_coef", 0.01),
                 gamma=t.get("gamma", 0.99), device=t.get("device", "cpu"))
-    val_envs = {s: make_env(cfg, *splits[s]["val"]) for s in syms}
+    val_envs = {}
+    for s in syms:          # check each coin on its longest unbroken piece of the val period
+        ps = pieces(*splits[s]["val"], min_len=w + 200)
+        if ps:
+            val_envs[s] = make_env(cfg, *max(ps, key=lambda p: len(p[0])))
+        elif s == cfg["symbol"]:
+            raise SystemExit(f"{s} has no usable data in the validation period")
+        else:
+            print(f"note: {s} has no data in this validation period - not used to pick checkpoints")
     unlimited = not timesteps
     cb = ValCallback(val_envs, model_path, log_path, cfg["timeframe"], seed,
                      every=25_000 if unlimited else max(10_000, timesteps // 20))
