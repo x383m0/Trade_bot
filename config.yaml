@@ -68,9 +68,17 @@ train:
   device: cpu             # cpu is fastest for this small network; a GPU only helps big models
   threads: 2              # CPU threads per seed. 2 is fastest (measured); MORE threads is SLOWER here.
                           # To use a big CPU, train more seeds at once with --parallel instead
-  window: 16              # candles of history the agent sees each decision            (retrain)
+  window: 1               # candles of history the agent sees each decision            (retrain)
+                          # (16 with features: all; 1 with trend_only - the trend features barely
+                          # change from one 4h candle to the next, 16 copies only add noise)
   long_term_features: true  # also see 7/30/90-day trends and 30/200-day averages (from daily
                           # candles), so it can tell a bull market dip from a bear market  (retrain)
+  features: trend_only    # all        = short-term (last candles, RSI, volume, hour...) + long-term
+                          # trend_only = ONLY the 9 long-term trend features (7/30/90-day returns,
+                          #   distance from the 30/200-day averages, drop from the 90-day high,
+                          #   volatility) + its position. Same information as the 200-day rule
+                          #   and a bit more: a fair test of whether RL adds anything.
+                          #   (v2 with "all" + window 16: +39% vs the rule's +218%)       (retrain)
   # --- speed: the market simulation is fast, the network was the bottleneck ---
   n_envs: 16              # market copies played at once (one network call for all of them)
   n_steps: 256            # steps per copy before each learning round (16 x 256 = 4096 per round)

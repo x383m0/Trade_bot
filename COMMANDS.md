@@ -70,6 +70,7 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 | `python walkforward.py --folds 3 --timesteps 100000` | Quicker walk-forward to try settings |
 | `python walkforward.py --parallel 3` | Same, seeds trained at once (strong PC) |
 | `python walkforward.py --fresh` | Redo all periods (otherwise finished periods are reused) |
+| (automatic) | When settings change, the previous walk-forward results are kept in `reports/<timeframe>/walkforward_<code>` instead of being overwritten |
 | `python rules_test.py` | **Simple rules vs buy & hold** (e.g. "hold when above the 200-day average") on the same 6 periods, on 1h / 2h / 4h / daily candles. 1-2 minutes, no training. If no rule beats buy & hold, a bot on the same data probably can't either |
 | `python rotation_test.py` | **Coin rotation**: hold whichever of BTC / ETH / SOL rose most lately (or cash if all are falling), on the same 6 periods. Compared with buy & hold BTC and with holding all coins equally. About a minute, no training |
 | `python rotation_test.py --coins wide` | Same with 11 coins (BTC ETH SOL XRP ADA DOGE LTC LINK AVAX DOT BCH): less hindsight than picking today's winners. Download the extra coins first: `python -m data.fetch --symbol XRP/USD ADA/USD DOGE/USD LTC/USD LINK/USD AVAX/USD DOT/USD BCH/USD` |

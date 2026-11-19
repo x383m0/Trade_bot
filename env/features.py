@@ -10,6 +10,9 @@ import pandas as pd
 LONGEST_HOURS = 96  # longest INTRADAY lookback (4 days) - candles of history live trading needs
 LONG_TERM_DAYS = 200  # longest DAILY lookback (long-term trend features, from daily candles)
 DAILY_HISTORY = LONG_TERM_DAYS + 10   # completed daily candles live trading needs
+# the long-term ("trend") features - the only ones used with train.features: trend_only
+LONG_TERM_COLUMNS = ["ret_7d", "ret_30d", "ret_90d", "dist_ma_30d", "dist_ma_200d", "ma30_vs_ma200",
+                     "from_high_90d", "vol_30d", "vol_regime_30d"]
 
 
 def bars_per_hour(timeframe: str) -> float:

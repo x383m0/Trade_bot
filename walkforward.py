@@ -30,7 +30,7 @@ import pandas as pd
 
 from agents import build_agent
 from backtest import monkey_returns
-from common import data_path, load_config, load_splits, make_env, metrics, pair_of, trade_cost, write_json
+from common import data_path, load_config, load_splits, make_env, metrics, pair_of, read_json, trade_cost, write_json
 from train import run_episode, train_seeds
 
 
@@ -172,10 +172,17 @@ def main():
                          "or use fewer folds")
 
     out_dir = Path(cfg["paths"]["report"]) / "walkforward"
-    out_dir.mkdir(parents=True, exist_ok=True)
     model_dir = Path("models") / f"wf_{pair_of(cfg['symbol'])}_{cfg['timeframe']}"
     model_dir.mkdir(parents=True, exist_ok=True)
     sig = settings_signature(cfg, args.folds, start, end, args.timesteps, args.seeds)
+    old = read_json(out_dir / "run.json")
+    if old and old.get("signature") != sig and (out_dir / "summary.csv").exists():
+        # different settings: keep the previous run's results instead of overwriting them
+        keep = out_dir.with_name(f"walkforward_{old['signature']}")
+        if not keep.exists():
+            out_dir.rename(keep)
+            print(f"settings changed - the previous walk-forward results were kept in {keep}")
+    out_dir.mkdir(parents=True, exist_ok=True)
     seeds = [cfg["train"]["seed"] + i for i in range(args.seeds)]
     print(f"walk-forward: {args.folds} periods between {start:.0%} and {end:.0%} of history, "
           f"{args.seeds} seeds x {args.timesteps:,} steps per period "

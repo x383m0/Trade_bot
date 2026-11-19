@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from env.features import make_features, warmup_bars
+from env.features import LONG_TERM_COLUMNS, make_features, warmup_bars
 from env.trading_env import TradingEnv, position_context
 
 
@@ -91,6 +91,16 @@ def long_term(cfg):
     return bool(cfg["train"].get("long_term_features", False))
 
 
+def trend_only(cfg):
+    """train.features: trend_only -> the bot sees ONLY the long-term trend features (+ its position)."""
+    mode = str(cfg["train"].get("features", "all"))
+    if mode not in ("all", "trend_only"):
+        raise SystemExit(f"train.features must be 'all' or 'trend_only', not '{mode}'")
+    if mode == "trend_only" and not long_term(cfg):
+        raise SystemExit("train.features: trend_only needs train.long_term_features: true")
+    return mode == "trend_only"
+
+
 def data_path(cfg, symbol):
     return cfg["_data_template"].format(timeframe=cfg["timeframe"], pair=pair_of(symbol),
                                         exchange=cfg["exchange"], data_exchange=cfg["data_exchange"])
@@ -146,6 +156,8 @@ def load_splits(cfg, fractions=None):
         # until there is enough history again)
         feats = pd.concat([make_features(df.iloc[i].reset_index(drop=True), tf, long_term=long_term(cfg))
                            for i in segs], ignore_index=True)
+        if trend_only(cfg):
+            feats = feats[LONG_TERM_COLUMNS]
         ok = feats.notna().all(axis=1)
         raw[sym] = (df[ok].reset_index(drop=True), feats[ok].reset_index(drop=True))
 

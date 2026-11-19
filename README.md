@@ -153,6 +153,7 @@ less gain than buy & hold, crashes about half as deep). v2 sets the bot up to le
 - **Longer horizon** (`gamma: 0.995` = about 33 days on 4h, `episode_len: 1500`): it can learn that
   sitting through a dip in an uptrend pays off weeks later.
 - **11 training coins**, including ones that did badly: more bull and bear markets to learn from.
+- **Trend-only inputs** (`features: trend_only`, `window: 1`): v2 with all 451 inputs made +39% vs the rule's +218% (6 walk-forward periods); most of its inputs were short-term noise. Now it sees only the 9 long-term trend features + its position: the same information as the 200-day rule and a bit more.
 - **Graded against the 200-day rule** in `walkforward.py`, not only buy & hold: if it can't at least
   match the simple rule, it hasn't learned anything a one-line rule doesn't already do.
 
