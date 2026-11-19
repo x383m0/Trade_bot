@@ -11,10 +11,20 @@ live_symbol: BTC/CAD      # pair used for paper/live trading on `exchange`. BTC/
                           # dollars (no USD conversion fees). Same % moves as BTC/USD, so the model
                           # trained on USD data works. Set to BTC/USD to trade in USD.
 train_symbols:            # coins it LEARNS from - more variety = less memorizing     (re-fetch, retrain)
-  - BTC/USD
-  - ETH/USD
+  - BTC/USD               # RL v2: all 11 coins (incl. ones that did badly) -> more bull AND bear
+  - ETH/USD               # markets to learn from. Missing coins are skipped with a warning.
   - SOL/USD
-timeframe: 1h             # candle size: 5m / 15m / 1h. For 1h set years ~8           (re-fetch, retrain)
+  - XRP/USD
+  - ADA/USD
+  - DOGE/USD
+  - LTC/USD
+  - LINK/USD
+  - AVAX/USD
+  - DOT/USD
+  - BCH/USD
+timeframe: 4h             # candle size: 15m / 1h / 4h. RL v2 uses 4h: less noise, fewer pointless
+                          # trades (rules_test: hourly checks made rules worse). 4h is built from
+                          # your 1h files: python -m data.resample   (no download)  (re-fetch, retrain)
 years: 8                  # history to download. 4 years includes bear markets (2022), not just bull runs (re-fetch, retrain)
 
 # --- costs (what Kraken charges) ---
@@ -71,10 +81,11 @@ train:
                           # learn as well as the old ones (4 / 1024 / 256 / 10 / 0.0001).
                           # Big batches need 0.0003: with 0.0001 they barely learned. (The old
                           # small batches were unstable at 0.0003 - that's why it was 0.0001 before.)
-  gamma: 0.99             # how far ahead it plans (0.99 ~ 100 bars = 4 days on 1h, 0.999 ~ 1000
-                          # bars = 6 weeks). Trades that should last weeks need a far horizon (retrain)
-  episode_len: 2000       # hours per training episode (a random slice of history). Keep it well
-                          # above the horizon: ~2000 for gamma 0.99, ~8000 for gamma 0.999   (retrain)
+  gamma: 0.995            # how far ahead it plans: about 1/(1-gamma) candles. 0.995 = 200 candles
+                          # = 33 days on 4h (was 0.99 on 1h = 4 days: too short to learn "sit
+                          # through the dip, the big trend is up")                          (retrain)
+  episode_len: 1500       # candles per training episode (a random slice of history) = 250 days on
+                          # 4h. Keep it well above the horizon (~7x 1/(1-gamma))            (retrain)
   ent_coef: 0.01          # exploration: higher = tries more random actions early       (retrain)
 
 # --- ensemble: all seeds vote every candle ---

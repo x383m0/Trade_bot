@@ -49,7 +49,7 @@ prices, so they work on any coin and any year), each in hours so they work on an
 
 ### Learning from several coins
 
-`train_symbols` (BTC, ETH, SOL by default) are all used for training; the bot still trades only
+`train_symbols` (11 coins by default: BTC, ETH, SOL, XRP, ADA, DOGE, LTC, LINK, AVAX, DOT, BCH) are all used for training; the bot still trades only
 `symbol`. More variety forces it to learn patterns that work everywhere instead of memorizing
 BTC's history. All coins are split on the **same dates** (no peeking at BTC's test period through
 ETH), each coin is normalized with its own stats, and the best checkpoint is picked by the
@@ -141,6 +141,20 @@ Offline / pipeline test: `python -m data.fetch --synthetic` generates a random w
 | `agents.py` | loads the agent: ensemble of seeds (majority vote) or single model |
 | `paper_trade.py` | fake-money trading on live Kraken prices, or replay of the test period |
 | `dashboard.py` | Streamlit dashboard |
+
+## RL bot v2 (current defaults)
+
+The first bot (1h candles, 4-day horizon, 3 coins) won 1 of 6 walk-forward periods. Simple-rule
+tests showed the only robust edge on price data is the long-term trend (the 200-day rule: a bit
+less gain than buy & hold, crashes about half as deep). v2 sets the bot up to learn that:
+
+- **4h candles** (`timeframe: 4h`): less noise, fewer pointless trades. Built from your 1h files with
+  `python -m data.resample` (Coinbase has no 4h candles; Kraken does, for live trading).
+- **Longer horizon** (`gamma: 0.995` = about 33 days on 4h, `episode_len: 1500`): it can learn that
+  sitting through a dip in an uptrend pays off weeks later.
+- **11 training coins**, including ones that did badly: more bull and bear markets to learn from.
+- **Graded against the 200-day rule** in `walkforward.py`, not only buy & hold: if it can't at least
+  match the simple rule, it hasn't learned anything a one-line rule doesn't already do.
 
 ## Comparing timeframes (15m vs 1h)
 

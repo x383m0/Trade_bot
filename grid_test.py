@@ -46,7 +46,7 @@ import pandas as pd
 
 from common import load_config, trade_rules
 from info_test import final_window
-from rules_test import resample, signals, test_windows
+from rules_test import data_1h, resample, signals, test_windows
 
 WIN_MARGIN = 0.5
 SIDEWAYS = 25.0     # a period is "sideways" if buy & hold moved less than +-25% (decided in advance)
@@ -155,8 +155,6 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config()
-    if cfg["timeframe"] != "1h":
-        raise SystemExit("grid_test.py uses 1h candles: set timeframe: 1h")
     rules = trade_rules(cfg)
     cost, margin = rules["maker_fee"], rules["fill_margin"]    # grid bots only use limit orders
 
@@ -165,7 +163,7 @@ def main():
     t0f, t1f = final_window(cfg)
     print(f"final-exam period: {t0f.date()} -> {t1f.date()}")
 
-    df = pd.read_parquet(cfg["paths"]["data"]).reset_index(drop=True)
+    df = data_1h(cfg).reset_index(drop=True)
     trend = trend_per_hour(df)
     times = pd.to_datetime(df["ts"], unit="ms")
 

@@ -17,6 +17,7 @@ MENU = [
     ("DATA", None),
     ("Download price history for all training coins", ["-m", "data.fetch"]),
     ("Download one coin only (asks which)", ["-m", "data.fetch", "--symbol", "{coin}"]),
+    ("Build 4h candles from your 1h files (no download, seconds)", ["-m", "data.resample"]),
     ("Check how much history exchanges have (asks which pair)", ["-m", "data.check_history", "{pair}"]),
     ("TRAINING", None),
     ("Quick test training (1 seed, 50k steps, ~minutes)", ["train.py", "--seeds", "1", "--timesteps", "50000"]),

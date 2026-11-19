@@ -73,6 +73,36 @@ def signals(close, bars_per_day):
     }
 
 
+def trend_rule_at(df_any, ts_ms):
+    """The 200-day rule (2% buffer, decided at each daily close) as known at candles starting at
+    `ts_ms`: a candle on day D uses the decision made at the close of day D-1 (no peeking).
+    df_any: the coin's full candle history (any candle size; needs 200+ days before ts_ms)."""
+    daily = resample(df_any, "1D").set_index("open_time")["close"]
+    sig = signals(daily, 1)["200-day avg, 2% buffer"].shift(1)
+    day = pd.to_datetime(np.asarray(ts_ms), unit="ms").normalize()
+    return sig.reindex(day).fillna(0).astype(int).values
+
+
+def rule_equity(close, pos, cost):
+    """Equity curve (starts at 1) holding pos[k] from close k to close k+1, paying cost per switch."""
+    pos = np.asarray(pos, dtype=float)
+    r = np.log(close[1:] / close[:-1])
+    held = pos[:-1]
+    switches = np.abs(np.diff(np.concatenate([[0.0], held])))
+    return np.exp(np.concatenate([[0.0], np.cumsum(held * r - switches * cost)]))
+
+
+def data_1h(cfg):
+    """The traded coin's 1h candles, whatever candle size the bot itself uses."""
+    from common import data_path
+    path = data_path({**cfg, "timeframe": "1h"}, cfg["symbol"])
+    try:
+        return pd.read_parquet(path)
+    except FileNotFoundError:
+        raise SystemExit(f"{path} not found - this test needs 1h candles (set timeframe: 1h and run "
+                         "python -m data.fetch, then switch back)")
+
+
 def simulate(close, pos, cost):
     """Hold `pos[k]` from close k to close k+1, paying `cost` on every switch (start in cash).
     Returns (return %, trades, % of time in market, max drawdown %)."""
@@ -97,9 +127,7 @@ def main():
     cost, sym = trade_cost(cfg), cfg["symbol"]
     entry_cost = cost                                  # buy & hold pays the same cost as the rules
 
-    df1h = pd.read_parquet(cfg["paths"]["data"])
-    if cfg["timeframe"] != "1h":
-        raise SystemExit("rules_test.py builds every candle size from 1h data: set timeframe: 1h")
+    df1h = data_1h(cfg)          # every candle size is built from 1h candles
 
     rows = []
     for tf, rule in TIMEFRAMES.items():

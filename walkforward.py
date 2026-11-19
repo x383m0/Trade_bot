@@ -30,7 +30,7 @@ import pandas as pd
 
 from agents import build_agent
 from backtest import monkey_returns
-from common import load_config, load_splits, make_env, metrics, pair_of, trade_cost, write_json
+from common import data_path, load_config, load_splits, make_env, metrics, pair_of, trade_cost, write_json
 from train import run_episode, train_seeds
 
 
@@ -73,6 +73,11 @@ def run_fold(cfg, i, fracs, seeds, timesteps, parallel, out_dir, model_dir):
     close = df["close"].values[start:start + len(eq)]
     bh = close / close[0] * (1 - cfg["fee"] - cfg["slippage"])
     m_bot, m_bh = metrics(eq, tf), metrics(bh, tf)
+    from rules_test import rule_equity, trend_rule_at      # here: rules_test imports this file
+    # the 200-day rule on the same candles: the "smaller crashes" benchmark the bot should at least match
+    ts_ms = df["ts"].values[start:start + len(eq)]
+    rule = rule_equity(close, trend_rule_at(pd.read_parquet(data_path(cfg, sym)), ts_ms), trade_cost(cfg))
+    m_rule = metrics(rule, tf)
     per_seed = {}
     for s in seed_ids:
         e, n, _ = run_episode(build_agent(cfg, [f"{prefix}_seed{s}"]), make_env(cfg, df, feats))
@@ -82,16 +87,19 @@ def run_fold(cfg, i, fracs, seeds, timesteps, parallel, out_dir, model_dir):
     testable = bool(trades > 0 and monkeys.std() > 1e-6)
     beats = float(((bot_ret > monkeys + 1e-6).mean() + 0.5 * (np.abs(bot_ret - monkeys) <= 1e-6).mean()) * 100)
     ts = pd.to_datetime(df["ts"].values[start:start + len(eq)], unit="ms")
-    pd.DataFrame({"time": ts, "bot": eq, "buy_hold": bh}).to_csv(fold_dir / "equity.csv", index=False)
+    pd.DataFrame({"time": ts, "bot": eq, "buy_hold": bh, "rule_200d": rule}).to_csv(fold_dir / "equity.csv",
+                                                                                   index=False)
     res = {"fold": i, "test_start": str(ts[0].date()), "test_end": str(ts[-1].date()),
            "bot_%": round(bot_ret, 2), "buy_hold_%": round((bh[-1] - 1) * 100, 2),
            "excess_%": round(bot_ret - (bh[-1] - 1) * 100, 2),
            "bot_max_dd_%": round(m_bot["max_drawdown_%"], 2), "bh_max_dd_%": round(m_bh["max_drawdown_%"], 2),
+           "rule_%": round((rule[-1] - 1) * 100, 2), "rule_max_dd_%": round(m_rule["max_drawdown_%"], 2),
            "bot_sharpe": round(m_bot["sharpe"], 2), "trades": int(trades),
            "in_market_%": round(float(positions.mean() * 100), 1),
            "monkey_beats_%": round(beats, 1) if testable else None, "seeds": per_seed,
            "agent": agent.label() if hasattr(agent, "label") else "agent"}
     print(f"  fold {i}: bot {res['bot_%']:+.1f}%  vs buy & hold {res['buy_hold_%']:+.1f}%  "
+          f"vs 200-day rule {res['rule_%']:+.1f}%  "
           f"({res['trades']} trades, {res['in_market_%']:.0f}% in market)")
     return res
 
@@ -109,8 +117,10 @@ def summarize(cfg, results, out_dir):
             "worst_bh_dd_%": round(float(df["bh_max_dd_%"].min()), 2),
             "median_monkey_%": (round(float(df["monkey_beats_%"].dropna().median()), 1)
                                 if df["monkey_beats_%"].notna().any() else None)}
-    show = df[["fold", "test_start", "test_end", "bot_%", "buy_hold_%", "excess_%", "trades",
-               "in_market_%", "bot_max_dd_%", "monkey_beats_%"]]
+    has_rule = "rule_%" in df and df["rule_%"].notna().all()     # folds from before this was added lack it
+    show = df[["fold", "test_start", "test_end", "bot_%", "buy_hold_%"] + (["rule_%"] if has_rule else [])
+              + ["excess_%", "trades", "in_market_%", "bot_max_dd_%", "bh_max_dd_%"]
+              + (["rule_max_dd_%"] if has_rule else []) + ["monkey_beats_%"]]
     show.to_csv(out_dir / "summary.csv", index=False)
     write_json(out_dir / "summary.json", summ)
     print(f"\n================ WALK-FORWARD RESULT ({cfg['symbol']} {cfg['timeframe']}) ================")
@@ -120,6 +130,21 @@ def summarize(cfg, results, out_dir):
     print(f"all periods chained: bot {bot_total:+.1f}%  vs  buy & hold {bh_total:+.1f}%")
     print(f"worst drawdown in a period: bot {summ['worst_bot_dd_%']:.1f}%  vs  buy & hold "
           f"{summ['worst_bh_dd_%']:.1f}%")
+    if has_rule:
+        rule_total = (np.prod(1 + df["rule_%"] / 100) - 1) * 100
+        beat_rule = int((df["bot_%"] > df["rule_%"] + 0.5).sum())
+        summ.update({"rule_total_%": round(float(rule_total), 2), "beat_rule": beat_rule,
+                     "worst_rule_dd_%": round(float(df["rule_max_dd_%"].min()), 2)})
+        write_json(out_dir / "summary.json", summ)
+        print(f"\n200-day rule (the 'smaller crashes' benchmark): chained {rule_total:+.1f}%, worst drop "
+              f"{summ['worst_rule_dd_%']:.1f}%. Bot beat it in {beat_rule}/{len(df)} periods")
+        if bot_total >= rule_total and summ["worst_bot_dd_%"] >= summ["worst_rule_dd_%"] - 5:
+            print("vs 200-day rule: ✅ the bot made at least as much with crashes no deeper -> it learned "
+                  "something real")
+        elif summ["worst_bot_dd_%"] > summ["worst_bh_dd_%"] + 10 and bot_total > 0:
+            print("vs 200-day rule: 🤔 the bot cut crashes vs buy & hold but made less than the simple rule")
+        else:
+            print("vs 200-day rule: ❌ the simple rule did better - the bot hasn't learned the long-term trend")
     share = won / len(df)
     verdict = ("✅ consistently beats buy & hold - promising, now check the final test split"
                if share >= 0.7 and summ["avg_excess_%"] > 0 else

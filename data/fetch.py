@@ -43,13 +43,18 @@ def fetch_ohlcv(cfg, symbol):
         print("WARNING: Kraken's API only returns the last ~720 candles - use coinbase for history.")
     ex = getattr(ccxt, name)({"enableRateLimit": True})
     ex.load_markets()
-    tf_ms = ex.parse_timeframe(cfg["timeframe"]) * 1000
+    tf = cfg["timeframe"]
+    if ex.timeframes and tf not in ex.timeframes:          # e.g. Coinbase has no 4h: build it from 1h
+        from data.resample import resample_ohlcv
+        print(f"{name} has no {tf} candles - downloading 1h and building {tf} from them")
+        return resample_ohlcv(fetch_ohlcv({**cfg, "timeframe": "1h"}, symbol), tf)
+    tf_ms = ex.parse_timeframe(tf) * 1000
     limit = LIMITS.get(name, 1000)
     now = ex.milliseconds()
     since = now - int(cfg["years"] * 365 * 24 * 3600 * 1000)
     rows = []
     while since < now:
-        batch = fetch_with_retry(ex, symbol, cfg["timeframe"], since, limit)
+        batch = fetch_with_retry(ex, symbol, tf, since, limit)
         if batch:
             rows += batch
             since = batch[-1][0] + tf_ms

@@ -458,13 +458,16 @@ with tab_wf:
                              text=res["bot_%"].map("{:+.1f}%".format), textposition="outside"))
         bar.add_trace(go.Bar(x=labels, y=res["buy_hold_%"], name="buy & hold", marker_color="#ff7f0e",
                              text=res["buy_hold_%"].map("{:+.1f}%".format), textposition="outside"))
+        if "rule_%" in res and res["rule_%"].notna().all():
+            bar.add_trace(go.Bar(x=labels, y=res["rule_%"], name="200-day rule", marker_color="#7f7f7f",
+                                 text=res["rule_%"].map("{:+.1f}%".format), textposition="outside"))
         bar.update_layout(barmode="group", height=360, yaxis_title="return % in the period",
                           margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"),
                           uirevision="wf_bar")
         st.plotly_chart(bar, width="stretch", key="wf_bar", config=PLOT_CONFIG)
 
         # stitched equity: each period starts where the previous one ended
-        curves, b_lvl, h_lvl = [], 1.0, 1.0
+        curves, b_lvl, h_lvl, r_lvl = [], 1.0, 1.0, 1.0
         for f in fold_files:
             ef = f.parent / "equity.csv"
             if not ef.exists() or f.parent.name[4:] not in map(str, res["fold"]):
@@ -474,6 +477,9 @@ with tab_wf:
                 continue
             e["bot"], e["buy_hold"] = e["bot"] * b_lvl, e["buy_hold"] / e["buy_hold"].iloc[0] * h_lvl
             b_lvl, h_lvl = e["bot"].iloc[-1], e["buy_hold"].iloc[-1]
+            if "rule_200d" in e:
+                e["rule_200d"] = e["rule_200d"] * r_lvl
+                r_lvl = e["rule_200d"].iloc[-1]
             curves.append(e)
         if curves:
             eq = pd.concat(curves)
@@ -481,6 +487,9 @@ with tab_wf:
             fig.add_trace(go.Scatter(x=eq["time"], y=eq["bot"], name="bot", line=dict(color="#1f77b4")))
             fig.add_trace(go.Scatter(x=eq["time"], y=eq["buy_hold"], name="buy & hold",
                                      line=dict(color="#ff7f0e", dash="dot")))
+            if "rule_200d" in eq and eq["rule_200d"].notna().all():
+                fig.add_trace(go.Scatter(x=eq["time"], y=eq["rule_200d"], name="200-day rule",
+                                         line=dict(color="#7f7f7f", width=1.5)))
             fig.add_hline(y=1, line_dash="dash", line_color="gray")
             fig.update_layout(title="All test periods chained (start = 1.0)", height=360,
                               margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation="h"),
@@ -488,8 +497,8 @@ with tab_wf:
             st.plotly_chart(fig, width="stretch", key="wf_eq", config=PLOT_CONFIG)
 
         st.subheader("Periods")
-        cols = ["fold", "test_start", "test_end", "bot_%", "buy_hold_%", "excess_%", "trades",
-                "in_market_%", "bot_max_dd_%", "bh_max_dd_%", "monkey_beats_%"]
+        cols = ["fold", "test_start", "test_end", "bot_%", "buy_hold_%", "rule_%", "excess_%", "trades",
+                "in_market_%", "bot_max_dd_%", "bh_max_dd_%", "rule_max_dd_%", "monkey_beats_%"]
         st.dataframe(res[[c for c in cols if c in res]], width="stretch", hide_index=True)
 
     walkforward_section()

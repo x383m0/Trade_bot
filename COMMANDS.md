@@ -25,6 +25,7 @@ Get the latest code: `git pull` (then `pip install -r requirements.txt` if it sa
 |---|---|
 | `python -m data.fetch` | Download history for every coin in `train_symbols` (a few min per coin) |
 | `python -m data.fetch --symbol ETH/USD` | Download just one coin (or several: `--symbol XRP/USD ADA/USD`) |
+| `python -m data.resample` | Build the config's candle size (e.g. **4h**) from the 1h files you already have, for every training coin. No download, a few seconds. (Coinbase has no 4h candles; `data.fetch` does this by itself when needed) |
 | `python -m data.fetch --synthetic` | Fake random data (offline testing; the bot can't learn anything real from it) |
 
 Rerun after changing `symbol`, `train_symbols`, `timeframe` or `years`.
@@ -65,7 +66,7 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 | `python paper_trade.py` | **Live** paper trading on real Kraken prices (fake money) |
 | `python paper_trade.py --reset` | Live, starting over with fresh fake $20 |
 
-| `python walkforward.py` | **Walk-forward test**: trains fresh bots and tests them on 6 periods in a row (see below) |
+| `python walkforward.py` | **Walk-forward test**: trains fresh bots and tests them on 6 periods in a row (see below). Also compares every period with the **200-day rule**: the bot should at least match it (similar gain, crashes no deeper) |
 | `python walkforward.py --folds 3 --timesteps 100000` | Quicker walk-forward to try settings |
 | `python walkforward.py --parallel 3` | Same, seeds trained at once (strong PC) |
 | `python walkforward.py --fresh` | Redo all periods (otherwise finished periods are reused) |
