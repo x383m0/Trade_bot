@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from agents import load_agent, load_seed_models
-from common import load_config, load_splits, make_env, metrics, trade_cost, trade_rules, write_json
+from common import data_path, load_config, load_splits, make_env, metrics, trade_cost, trade_rules, write_json
 from train import run_episode
 
 
@@ -83,6 +83,11 @@ def main():
         eq, n_tr, _ = run_episode(model, make_env(cfg, df, feats))
         rows[name] = {**metrics(eq, tf), "trades": n_tr}
     rows["Buy & hold"] = metrics(bh_eq, tf)
+    # the 200-day rule on the same candles (the "smaller crashes" benchmark)
+    from rules_test import rule_equity, trend_rule_at          # here: rules_test imports walkforward
+    ts_ms = df["ts"].values[start:start + len(agent_eq)]
+    rows["200-day rule"] = metrics(rule_equity(close, trend_rule_at(pd.read_parquet(data_path(cfg, sym)), ts_ms),
+                                               cost), tf)
     rows["Do nothing"] = metrics(flat_eq, tf)
     table = pd.DataFrame(rows).T.round(2)
 

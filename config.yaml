@@ -60,7 +60,8 @@ split:
 # --- training ---
 train:
   algo: PPO
-  total_timesteps: 500000 # training steps per seed. More = longer, often better (1-3M)  (retrain)
+  total_timesteps: 1000000 # training steps per seed - same as walkforward.timesteps, so the real
+                          # bot is trained exactly like the bots the walk-forward tested  (retrain)
   seed: 42                # first seed; extra seeds are 43, 44, ...
   n_seeds: 3              # agents trained per run (python train.py --seeds N to override)
   parallel: 1             # seeds trained at the same time. On a strong CPU set it to n_seeds
