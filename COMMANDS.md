@@ -70,6 +70,7 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 | `python walkforward.py --parallel 3` | Same, seeds trained at once (strong PC) |
 | `python walkforward.py --fresh` | Redo all periods (otherwise finished periods are reused) |
 | `python rules_test.py` | **Simple rules vs buy & hold** (e.g. "hold when above the 200-day average") on the same 6 periods, on 1h / 2h / 4h / daily candles. 1-2 minutes, no training. If no rule beats buy & hold, a bot on the same data probably can't either |
+| `python rotation_test.py` | **Coin rotation**: hold whichever of BTC / ETH / SOL rose most lately (or cash if all are falling), on the same 6 periods. Compared with buy & hold BTC and with holding all coins equally. About a minute, no training |
 
 **Walk-forward** is the most trustworthy test: for each period it trains new bots only on data
 *before* it, then lets them trade that period unseen. It reports in how many periods the bot beat

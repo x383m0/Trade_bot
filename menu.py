@@ -34,6 +34,7 @@ MENU = [
     ("Walk-forward, quick check (3 periods, 100k steps)", ["walkforward.py", "--folds", "3",
                                                           "--timesteps", "100000"]),
     ("Simple rules vs buy & hold on the walk-forward periods (1-2 min, no training)", ["rules_test.py"]),
+    ("Coin rotation (hold the strongest of BTC/ETH/SOL) vs buy & hold (1 min)", ["rotation_test.py"]),
     ("PAPER TRADING (fake money)", None),
     ("Replay demo: watch the bot trade the test period (fresh $)", ["paper_trade.py", "--replay", "--reset"]),
     ("Replay demo, slow (0.5 s per candle)", ["paper_trade.py", "--replay", "--reset", "--delay", "0.5"]),

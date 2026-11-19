@@ -24,6 +24,22 @@ from walkforward import fold_windows
 TIMEFRAMES = {"1h": "1h", "2h": "2h", "4h": "4h", "1d": "1D"}
 
 
+def test_windows(cfg, folds=None):
+    """[(period, start, end)]: the exact test windows walkforward.py uses (same split code, data)."""
+    wf = cfg.get("walkforward") or {}
+    folds = folds or int(wf.get("folds", 6))
+    start, end = float(wf.get("start", 0.40)), float(wf.get("end", 0.85))
+    windows = []
+    for i, fracs in enumerate(fold_windows(folds, start, end), 1):
+        splits, _ = load_splits(cfg, fracs)
+        te = splits[cfg["symbol"]]["test"][0]
+        first = cfg["train"]["window"] - 1               # the bot starts trading after its window
+        t0, t1 = pd.to_datetime(te["ts"].iloc[[first, -1]], unit="ms")
+        windows.append((i, t0, t1))
+        print(f"period {i}: {t0.date()} -> {t1.date()}")
+    return windows
+
+
 def resample(df1h, rule):
     """Candles of another size built from 1h candles (Kraken has no 2h, Coinbase no 4h)."""
     t = pd.to_datetime(df1h["ts"], unit="ms")
@@ -76,21 +92,10 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config()
-    wf = cfg.get("walkforward") or {}
-    folds = args.folds or int(wf.get("folds", 6))
-    start, end = float(wf.get("start", 0.40)), float(wf.get("end", 0.85))
+    windows = test_windows(cfg, args.folds)
+    folds = len(windows)
     cost, sym = trade_cost(cfg), cfg["symbol"]
     entry_cost = cfg["fee"] + cfg["slippage"]          # same buy & hold as walkforward.py
-
-    # the exact test windows the walk-forward used (same split code, same data)
-    windows = []
-    for i, fracs in enumerate(fold_windows(folds, start, end), 1):
-        splits, _ = load_splits(cfg, fracs)
-        te = splits[sym]["test"][0]
-        first = cfg["train"]["window"] - 1               # the bot starts trading after its window
-        t0, t1 = pd.to_datetime(te["ts"].iloc[[first, -1]], unit="ms")
-        windows.append((i, t0, t1))
-        print(f"period {i}: {t0.date()} -> {t1.date()}")
 
     df1h = pd.read_parquet(cfg["paths"]["data"])
     if cfg["timeframe"] != "1h":
