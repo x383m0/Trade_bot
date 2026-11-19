@@ -84,10 +84,11 @@ def synthetic_ohlcv(n=60000, seed=0, freq="15min", vol_mult=1.0, price0=30000):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--synthetic", action="store_true", help="fake random-walk data (offline testing)")
-    p.add_argument("--symbol", help="download only this coin (default: all train_symbols)")
+    p.add_argument("--symbol", nargs="+", metavar="COIN",
+                   help="download only these coins, e.g. --symbol XRP/USD ADA/USD (default: all train_symbols)")
     args = p.parse_args()
     cfg = load_config()
-    symbols = [args.symbol] if args.symbol else cfg["train_symbols"]
+    symbols = args.symbol or cfg["train_symbols"]
     tf = cfg["timeframe"]
     for i, sym in enumerate(symbols):
         if args.synthetic:
