@@ -44,6 +44,8 @@ MENU = [
     ("Replay demo, short (300 candles)", ["paper_trade.py", "--replay", "--reset", "--bars", "300"]),
     ("LIVE paper trading on real Kraken prices (resumes; Ctrl+C to stop)", ["paper_trade.py"]),
     ("LIVE paper trading, start over with fresh fake money", ["paper_trade.py", "--reset"]),
+    ("200-day rule: replay the final-exam period day by day (fresh $)", ["rule_trade.py", "--replay", "--reset"]),
+    ("200-day rule: LIVE paper trading, one decision per day (resumes)", ["rule_trade.py"]),
     ("DASHBOARD", None),
     ("Open the dashboard (Ctrl+C here to stop it)", ["-m", "streamlit", "run", "dashboard.py"]),
     ("RESULTS", None),

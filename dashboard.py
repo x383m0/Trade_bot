@@ -58,14 +58,18 @@ def trade_markers(fig, buys, sells, row):
 with tab_live:
     @st.fragment(run_every="5s")   # re-checks every 5 s, so it notices paper_trade.py starting
     def live_section():
-        modes = [m for m in ("live", "replay") if (REPORT / f"paper_{m}" / "equity.csv").exists()]
+        labels = {"live": "RL bot · live prices", "replay": "RL bot · replay (demo)",
+                  "rule_live": "200-day rule · live prices", "rule_replay": "200-day rule · replay (demo)"}
+        modes = [m for m in labels if (REPORT / f"paper_{m}" / "equity.csv").exists()]
         if not modes:
-            st.info("No paper trading yet. Run `python paper_trade.py` (live Kraken prices) or "
-                    "`python paper_trade.py --replay` (fast demo on held-out data).")
+            st.info("No paper trading yet. Run `python paper_trade.py` (RL bot, live Kraken prices), "
+                    "`python paper_trade.py --replay` (fast demo on held-out data) or "
+                    "`python rule_trade.py` (the 200-day rule).")
             return
-        mode = st.radio("Mode", modes, horizontal=True, key="paper_mode",
-                        format_func=lambda m: {"live": "Live prices", "replay": "Replay (demo)"}[m])
+        mode = st.radio("Account", modes, horizontal=True, key="paper_mode", format_func=labels.get)
         folder = REPORT / f"paper_{mode}"
+        is_rule = mode.startswith("rule")
+        who = "rule" if is_rule else "bot"
         eq = read_csv(folder / "equity.csv")
         state = read_json(folder / "state.json")
         if eq.empty or "equity" not in eq or not state:
@@ -92,7 +96,13 @@ with tab_live:
                     delta_color="off")
         c[4].metric("Last bar", str(last["time"])[5:], f"price {last['price']:,.2f}",
                     delta_color="off")
-        if mode == "replay":
+        if is_rule:
+            st.caption("200-day rule: hold BTC when the daily close is more than 2% above its 200-day "
+                       "average, cash when more than 2% below, otherwise keep the last position. One "
+                       "decision per day at 00:00 UTC. Fake money, no orders sent."
+                       + (" Replay = the final-exam period, day by day." if mode.endswith("replay") else
+                          f" Live {cfg['exchange']} prices since {state['started']} UTC."))
+        elif mode == "replay":
             st.caption("Replay = held-out test data fed one bar at a time, as if live. "
                        "Fake money, no orders sent.")
         else:
@@ -135,11 +145,19 @@ with tab_live:
 
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.65, 0.35],
                             vertical_spacing=0.05,
-                            subplot_titles=(f"{state.get('symbol', cfg['symbol'])} {cfg['timeframe']} & trades",
+                            subplot_titles=(f"{state.get('symbol', cfg['symbol'])} {state.get('timeframe', cfg['timeframe'])} & trades",
                                             f"Fake balance ({cur})"))
         fig.add_trace(price_trace(view, "price"), 1, 1)
+        rule = read_csv(folder / "rule.csv") if is_rule else pd.DataFrame()
+        if "ma200" in rule:
+            rv = view[["time"]].merge(rule, on="time", how="left")
+            fig.add_trace(go.Scatter(x=rv["time"], y=rv["ma200"], name="200-day avg",
+                                     line=dict(color="#7f7f7f", width=1.5)), 1, 1)
+            for col, color, name in (("buy_line", UP, "buy line (+2%)"), ("sell_line", DOWN, "sell line (-2%)")):
+                fig.add_trace(go.Scatter(x=rv["time"], y=rv[col], name=name,
+                                         line=dict(color=color, width=1, dash="dot")), 1, 1)
         trade_markers(fig, tr[tr["side"] == "BUY"], tr[tr["side"] == "SELL"], 1)
-        fig.add_trace(go.Scatter(x=view["time"], y=view["equity"], name="bot",
+        fig.add_trace(go.Scatter(x=view["time"], y=view["equity"], name=who,
                                  line=dict(color="#1f77b4", width=2)), 2, 1)
         fig.add_trace(go.Scatter(x=view["time"], y=view["buy_hold"], name="buy & hold",
                                  line=dict(color="#ff7f0e", width=1.5, dash="dot")), 2, 1)
@@ -157,7 +175,7 @@ with tab_live:
         if len(trades):
             st.dataframe(trades.iloc[::-1], width="stretch", hide_index=True)
         else:
-            st.caption("No trades yet - the bot is staying in cash.")
+            st.caption(f"No trades yet - the {who} is staying in cash.")
 
     live_section()
 
