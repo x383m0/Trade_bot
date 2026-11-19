@@ -37,6 +37,7 @@ MENU = [
     ("Coin rotation (hold the strongest of BTC/ETH/SOL) vs buy & hold (1 min)", ["rotation_test.py"]),
     ("Download Fear & Greed + funding rate history (new information)", ["-m", "data.fetch_extra"]),
     ("Fear & Greed / funding rules vs buy & hold (needs the download above)", ["info_test.py"]),
+    ("Grid bot vs buy & hold: are the 'steady profit' claims true? (10 s)", ["grid_test.py"]),
     ("PAPER TRADING (fake money)", None),
     ("Replay demo: watch the bot trade the test period (fresh $)", ["paper_trade.py", "--replay", "--reset"]),
     ("Replay demo, slow (0.5 s per candle)", ["paper_trade.py", "--replay", "--reset", "--delay", "0.5"]),

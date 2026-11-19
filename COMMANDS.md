@@ -75,6 +75,7 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 | `python rotation_test.py --coins wide --final` | **One-time final exam**: the variant chosen in advance (30-day leader, weekly) on the last 15% of history. Run it once only |
 | `python -m data.fetch_extra` | Download **Fear & Greed Index** (alternative.me, daily since 2018) and **BTC funding rates** (Kraken Futures). Free, no key |
 | `python info_test.py` | Rules using that new information (greed exit, fear buyer, crowded longs exit, and the 200-day rule combined with them) vs buy & hold and vs the 200-day rule, on the 6 periods + the final period |
+| `python grid_test.py` | **Grid bot** (buy on a ladder below the price, sell one rung higher) in 6 variants (tight / wide ladders, re-centering, trailing up, combined with the 200-day rule) vs buy & hold on the same 6 periods + the final period. Also shows the "grid profit" a bot app would advertise next to the real result. About 10 seconds |
 
 **Walk-forward** is the most trustworthy test: for each period it trains new bots only on data
 *before* it, then lets them trade that period unseen. It reports in how many periods the bot beat
