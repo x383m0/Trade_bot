@@ -71,7 +71,10 @@ train:
                           # learn as well as the old ones (4 / 1024 / 256 / 10 / 0.0001).
                           # Big batches need 0.0003: with 0.0001 they barely learned. (The old
                           # small batches were unstable at 0.0003 - that's why it was 0.0001 before.)
-  gamma: 0.99             # how far ahead it plans (0.99 ~ 100 bars, 0.999 ~ 1000)      (retrain)
+  gamma: 0.99             # how far ahead it plans (0.99 ~ 100 bars = 4 days on 1h, 0.999 ~ 1000
+                          # bars = 6 weeks). Trades that should last weeks need a far horizon (retrain)
+  episode_len: 2000       # hours per training episode (a random slice of history). Keep it well
+                          # above the horizon: ~2000 for gamma 0.99, ~8000 for gamma 0.999   (retrain)
   ent_coef: 0.01          # exploration: higher = tries more random actions early       (retrain)
 
 # --- ensemble: all seeds vote every candle ---

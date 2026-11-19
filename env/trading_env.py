@@ -143,6 +143,11 @@ class TradingEnv(gym.Env):
         self.pos = new_pos
         self.t += 1
         self.held = self.held + 1 if self.pos else 0
-        terminated = self.t >= self.end
-        return self._obs(), float(reward * 100), terminated, False, {
+        at_end = self.t >= self.end
+        # Training episodes (episode_len set) are just a random slice of history: reaching the end
+        # is a TIME LIMIT, not the end of the world, so report it as "truncated" - PPO then keeps
+        # valuing what comes after. Evaluation runs (whole period) really end: "terminated".
+        terminated = at_end and not self.episode_len
+        truncated = at_end and bool(self.episode_len)
+        return self._obs(), float(reward * 100), terminated, truncated, {
             "equity": self.equity, "n_trades": self.n_trades, "pos": self.pos, "forced": forced}

@@ -140,7 +140,7 @@ def train_one(cfg, splits, seed, timesteps, model_path, log_path):
     tr_df = [splits[s]["train"][0] for s in syms]
     tr_f = [splits[s]["train"][1] for s in syms]
     t = cfg["train"]
-    venv = make_vec_env(lambda: make_env(cfg, tr_df, tr_f, episode_len=2000),
+    venv = make_vec_env(lambda: make_env(cfg, tr_df, tr_f, episode_len=int(t.get("episode_len", 2000))),
                         n_envs=int(t.get("n_envs", 4)), seed=seed)
     model = PPO("MlpPolicy", venv, seed=seed, verbose=0, n_steps=int(t.get("n_steps", 1024)),
                 batch_size=int(t.get("batch_size", 256)), n_epochs=int(t.get("n_epochs", 10)),
