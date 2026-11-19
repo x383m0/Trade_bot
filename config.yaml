@@ -80,6 +80,13 @@ train:
                           #   volatility) + its position. Same information as the 200-day rule
                           #   and a bit more: a fair test of whether RL adds anything.
                           #   (v2 with "all" + window 16: +39% vs the rule's +218%)       (retrain)
+  start_long: 0.5         # share of training episodes that start ALREADY HOLDING the coin, so the bot
+                          # practises selling. The trend-only bot (start_long 0) passed the walk-forward
+                          # but failed the final exam: it bought once and never sold (-46% vs -50%,
+                          # rule -21%), because every episode and test started in cash      (retrain)
+  position_inputs: position_only  # full = also sees its trade's profit and how long it has held;
+                          # position_only = only whether it holds the coin (no "I've held long,
+                          # keep holding" habits; it must decide from the market)          (retrain)
   # --- speed: the market simulation is fast, the network was the bottleneck ---
   n_envs: 16              # market copies played at once (one network call for all of them)
   n_steps: 256            # steps per copy before each learning round (16 x 256 = 4096 per round)

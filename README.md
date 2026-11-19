@@ -154,6 +154,7 @@ less gain than buy & hold, crashes about half as deep). v2 sets the bot up to le
   sitting through a dip in an uptrend pays off weeks later.
 - **11 training coins**, including ones that did badly: more bull and bear markets to learn from.
 - **Trend-only inputs** (`features: trend_only`, `window: 1`): v2 with all 451 inputs made +39% vs the rule's +218% (6 walk-forward periods); most of its inputs were short-term noise. Now it sees only the 9 long-term trend features + its position: the same information as the 200-day rule and a bit more.
+- **Learning to sell** (`start_long: 0.5`, `position_inputs: position_only`): the trend-only bot passed the walk-forward (+339% vs the rule's +207%) but failed the final exam (-46% vs buy & hold -50%, rule -21%): it bought once and never sold. Every training episode and test period had started in cash, so it only learned when to buy. Now half the training episodes start holding BTC, it no longer sees its trade's profit or holding time, checkpoints are picked on both starts, and the walk-forward tests every period twice (in cash / holding BTC) and judges the worse one. It also reports how often the bot held BTC while the 200-day rule said cash.
 - **Graded against the 200-day rule** in `walkforward.py`, not only buy & hold: if it can't at least
   match the simple rule, it hasn't learned anything a one-line rule doesn't already do.
 

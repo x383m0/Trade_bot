@@ -84,10 +84,10 @@ def main():
         rows[name] = {**metrics(eq, tf), "trades": n_tr}
     rows["Buy & hold"] = metrics(bh_eq, tf)
     # the 200-day rule on the same candles (the "smaller crashes" benchmark)
-    from rules_test import rule_equity, trend_rule_at          # here: rules_test imports walkforward
+    from rules_test import rule_equity_like_bot, trend_rule_at   # here: rules_test imports walkforward
     ts_ms = df["ts"].values[start:start + len(agent_eq)]
-    rows["200-day rule"] = metrics(rule_equity(close, trend_rule_at(pd.read_parquet(data_path(cfg, sym)), ts_ms),
-                                               cost), tf)
+    rule_pos = trend_rule_at(pd.read_parquet(data_path(cfg, sym)), ts_ms)
+    rows["200-day rule"] = metrics(rule_equity_like_bot(cfg, df.iloc[start:start + len(agent_eq)], rule_pos), tf)
     rows["Do nothing"] = metrics(flat_eq, tf)
     table = pd.DataFrame(rows).T.round(2)
 

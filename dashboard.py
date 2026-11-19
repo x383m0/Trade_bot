@@ -467,7 +467,7 @@ with tab_wf:
         st.plotly_chart(bar, width="stretch", key="wf_bar", config=PLOT_CONFIG)
 
         # stitched equity: each period starts where the previous one ended
-        curves, b_lvl, h_lvl, r_lvl = [], 1.0, 1.0, 1.0
+        curves, b_lvl, h_lvl, r_lvl, l_lvl = [], 1.0, 1.0, 1.0, 1.0
         for f in fold_files:
             ef = f.parent / "equity.csv"
             if not ef.exists() or f.parent.name[4:] not in map(str, res["fold"]):
@@ -480,6 +480,9 @@ with tab_wf:
             if "rule_200d" in e:
                 e["rule_200d"] = e["rule_200d"] * r_lvl
                 r_lvl = e["rule_200d"].iloc[-1]
+            if "bot_long" in e:
+                e["bot_long"] = e["bot_long"] * l_lvl
+                l_lvl = e["bot_long"].iloc[-1]
             curves.append(e)
         if curves:
             eq = pd.concat(curves)
@@ -487,6 +490,9 @@ with tab_wf:
             fig.add_trace(go.Scatter(x=eq["time"], y=eq["bot"], name="bot", line=dict(color="#1f77b4")))
             fig.add_trace(go.Scatter(x=eq["time"], y=eq["buy_hold"], name="buy & hold",
                                      line=dict(color="#ff7f0e", dash="dot")))
+            if "bot_long" in eq and eq["bot_long"].notna().all():
+                fig.add_trace(go.Scatter(x=eq["time"], y=eq["bot_long"], name="bot (starting with BTC)",
+                                         line=dict(color="#1f77b4", dash="dash")))
             if "rule_200d" in eq and eq["rule_200d"].notna().all():
                 fig.add_trace(go.Scatter(x=eq["time"], y=eq["rule_200d"], name="200-day rule",
                                          line=dict(color="#7f7f7f", width=1.5)))
@@ -497,7 +503,8 @@ with tab_wf:
             st.plotly_chart(fig, width="stretch", key="wf_eq", config=PLOT_CONFIG)
 
         st.subheader("Periods")
-        cols = ["fold", "test_start", "test_end", "bot_%", "buy_hold_%", "rule_%", "excess_%", "trades",
+        cols = ["fold", "test_start", "test_end", "bot_%", "bot_long_%", "buy_hold_%", "rule_%", "excess_%",
+                "trades", "trades_long", "held_in_downtrend_%",
                 "in_market_%", "bot_max_dd_%", "bh_max_dd_%", "rule_max_dd_%", "monkey_beats_%"]
         st.dataframe(res[[c for c in cols if c in res]], width="stretch", hide_index=True)
 

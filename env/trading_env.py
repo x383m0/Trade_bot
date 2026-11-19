@@ -19,6 +19,13 @@ Reward types:
   drawdown_penalty: extra penalty whenever equity sinks further below its peak.
 
 Training can use several coins: pass lists; each episode picks one at random.
+
+start_long: probability that an episode starts ALREADY HOLDING the coin. Without it every episode
+  starts in cash, so the bot mostly practises "when to buy" and rarely "when to sell what I own".
+  Evaluation can pass 1.0 to test exactly that (start with the coin, see if it gets out in time).
+position_inputs: "full" = the bot sees [position, open-trade P&L, holding time];
+  "position_only" = only [position] (the other two are 0) - so it can't learn habits like
+  "I've held a long time, keep holding" and must decide from the market itself.
 """
 import gymnasium as gym
 import numpy as np
@@ -30,7 +37,9 @@ UPNL_SCALE = 20.0   # unrealized log-return * 20 -> ~±1 for a ±5% trade
 HELD_SCALE_BARS = 96
 
 
-def position_context(pos, upnl_log, held_bars):
+def position_context(pos, upnl_log, held_bars, full=True):
+    if not full:                                  # position_only: hide P&L and holding time
+        return [float(pos), 0.0, 0.0]
     return [float(pos), float(upnl_log) * UPNL_SCALE, min(held_bars / HELD_SCALE_BARS, 3.0)]
 
 
@@ -57,7 +66,8 @@ class TradingEnv(gym.Env):
     def __init__(self, close, feats, high=None, low=None, window=16, fee=0.001, slippage=0.0005,
                  trade_penalty=0.0002, episode_len=None, seed=None, order_type="market",
                  maker_fee=0.0025, fill_margin=0.0002, min_hold=0, stop_loss=0.0,
-                 reward_type="profit", drawdown_penalty=0.0):
+                 reward_type="profit", drawdown_penalty=0.0, start_long=0.0,
+                 position_inputs="full"):
         super().__init__()
         if not isinstance(close, (list, tuple)):          # single coin -> lists of one
             close, feats, high, low = [close], [feats], [high], [low]
@@ -80,6 +90,8 @@ class TradingEnv(gym.Env):
         self.min_hold, self.stop_loss = int(min_hold), float(stop_loss)
         self.reward_type, self.drawdown_penalty = reward_type, float(drawdown_penalty)
         self.trade_penalty = trade_penalty
+        self.start_long = float(start_long)
+        self.full_pos_inputs = position_inputs != "position_only"
         self.episode_len = episode_len  # None = run through the whole slice (evaluation)
         self.rng = np.random.default_rng(seed)
         self.action_space = spaces.Discrete(2)
@@ -93,7 +105,7 @@ class TradingEnv(gym.Env):
 
     def _obs(self):
         w = self.feats[self.t - self.window + 1: self.t + 1].ravel()
-        extra = position_context(self.pos, self._upnl(), self.held)
+        extra = position_context(self.pos, self._upnl(), self.held, self.full_pos_inputs)
         return np.clip(np.concatenate([w, extra]), -10, 10).astype(np.float32)
 
     def reset(self, seed=None, options=None):
@@ -111,6 +123,10 @@ class TradingEnv(gym.Env):
             self.t = lo
             self.end = len(self.close) - 2
         self.pos, self.entry, self.held = 0, 0.0, 0
+        if self.start_long >= 1.0 or (self.start_long > 0 and self.rng.random() < self.start_long):
+            # already holding the coin (bought earlier at this price; training: held a random while)
+            self.pos, self.entry = 1, float(self.close[self.t])
+            self.held = int(self.rng.integers(0, 300)) if self.episode_len else 0
         self.equity, self.peak, self.prev_dd = 1.0, 1.0, 0.0
         self.n_trades = 0
         return self._obs(), {}

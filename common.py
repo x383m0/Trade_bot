@@ -91,6 +91,14 @@ def long_term(cfg):
     return bool(cfg["train"].get("long_term_features", False))
 
 
+def position_inputs(cfg):
+    """train.position_inputs: full (position, trade P&L, holding time) | position_only."""
+    mode = str(cfg["train"].get("position_inputs", "full"))
+    if mode not in ("full", "position_only"):
+        raise SystemExit(f"train.position_inputs must be 'full' or 'position_only', not '{mode}'")
+    return mode
+
+
 def trend_only(cfg):
     """train.features: trend_only -> the bot sees ONLY the long-term trend features (+ its position)."""
     mode = str(cfg["train"].get("features", "all"))
@@ -171,7 +179,8 @@ def load_splits(cfg, fractions=None):
     cut_end = at(fractions[2]) if fractions[2] < 1.0 else int(ts.iloc[-1]) + 1
 
     splits, norm = {}, {"columns": None, "symbols": {}, "val_start_ts": cut_val,
-                        "test_start_ts": cut_test, "timeframe": tf, "long_term": long_term(cfg)}
+                        "test_start_ts": cut_test, "timeframe": tf, "long_term": long_term(cfg),
+                        "position_inputs": position_inputs(cfg)}
     for sym, (df, feats) in raw.items():
         parts = {"train": df["ts"] < cut_val,
                  "val": (df["ts"] >= cut_val) & (df["ts"] < cut_test),
@@ -228,7 +237,7 @@ def live_observation(bars: pd.DataFrame, norm, symbol, window, pos, upnl_log=0.0
     last = feats.iloc[-window:]
     if len(last) < window or last.isna().any().any():
         return None
-    extra = position_context(pos, upnl_log, held)
+    extra = position_context(pos, upnl_log, held, norm.get("position_inputs", "full") != "position_only")
     obs = np.concatenate([last.values.astype(np.float32).ravel(), extra])
     return np.clip(obs, -10, 10).astype(np.float32)
 
@@ -249,14 +258,18 @@ def trade_cost(cfg):
     return tr["maker_fee"] if tr["order_type"] == "limit" else cfg["fee"] + cfg["slippage"]
 
 
-def make_env(cfg, df, feats, episode_len=None, seed=None):
-    """df/feats can be single DataFrames or lists of them (several coins)."""
+def make_env(cfg, df, feats, episode_len=None, seed=None, start_long=None):
+    """df/feats can be single DataFrames or lists of them (several coins).
+    start_long: chance an episode starts holding the coin. Default: train.start_long for training
+    episodes (episode_len set), 0 (start in cash) for evaluation. Pass 1.0 to test exits."""
+    if start_long is None:
+        start_long = float(cfg["train"].get("start_long", 0.0)) if episode_len else 0.0
     dfs, fs = (df, feats) if isinstance(df, (list, tuple)) else ([df], [feats])
     return TradingEnv([d["close"].values for d in dfs], [f.values for f in fs],
                       high=[d["high"].values for d in dfs], low=[d["low"].values for d in dfs],
                       window=cfg["train"]["window"], fee=cfg["fee"], slippage=cfg["slippage"],
                       trade_penalty=cfg["trade_penalty"], episode_len=episode_len, seed=seed,
-                      **trade_rules(cfg))
+                      start_long=start_long, position_inputs=position_inputs(cfg), **trade_rules(cfg))
 
 
 def bars_per_year(timeframe):

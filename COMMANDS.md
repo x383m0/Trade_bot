@@ -66,7 +66,7 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 | `python paper_trade.py` | **Live** paper trading on real Kraken prices (fake money) |
 | `python paper_trade.py --reset` | Live, starting over with fresh fake $20 |
 
-| `python walkforward.py` | **Walk-forward test**: trains fresh bots and tests them on 6 periods in a row (see below). Also compares every period with the **200-day rule**: the bot should at least match it (similar gain, crashes no deeper) |
+| `python walkforward.py` | **Walk-forward test**: trains fresh bots and tests them on 6 periods in a row (see below). Also compares every period with the **200-day rule**: the bot should at least match it (similar gain, crashes no deeper) Each period is played twice: starting in cash and starting with BTC already bought (so a bot that never sells can't look good); judged on the worse of the two. The 200-day rule uses the same limit-order rules as the bot |
 | `python walkforward.py --folds 3 --timesteps 100000` | Quicker walk-forward to try settings |
 | `python walkforward.py --parallel 3` | Same, seeds trained at once (strong PC) |
 | `python walkforward.py --fresh` | Redo all periods (otherwise finished periods are reused) |

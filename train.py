@@ -73,7 +73,9 @@ BASE_FIELDS = ["seed", "timesteps", "elapsed_s", "val_return_%", "val_sharpe", "
 class ValCallback(BaseCallback):
     """Evaluates on every coin's validation period every `every` steps (and at the end), saves
     the best model (by AVERAGE validation return across coins - more data = less luck), and
-    appends a row to the seed's training log (read live by the dashboard)."""
+    appends a row to the seed's training log (read live by the dashboard).
+    Each coin is played twice: starting in cash and starting with the coin already bought, and the
+    two are averaged - so a bot that knows when to buy but never sells can't win the selection."""
 
     def __init__(self, val_envs, path, log_path, timeframe, seed, every=25_000):
         super().__init__()
@@ -92,9 +94,11 @@ class ValCallback(BaseCallback):
     def _evaluate(self):
         self.last_eval = self.num_timesteps
         per = {}
-        results = run_episodes_fast(self.model, list(self.val_envs.values()))
-        for sym, (eq, trades) in zip(self.val_envs, results):
-            per[sym] = {**metrics(eq, self.timeframe), "trades": trades}
+        envs = [e for pair in self.val_envs.values() for e in pair]     # (cash start, coin start)
+        results = run_episodes_fast(self.model, envs)
+        for k, sym in enumerate(self.val_envs):
+            runs = [{**metrics(eq, self.timeframe), "trades": tr} for eq, tr in results[2 * k: 2 * k + 2]]
+            per[sym] = {key: float(np.mean([r[key] for r in runs])) for key in runs[0]}
         avg = lambda k: float(np.mean([m[k] for m in per.values()]))
         ret = avg("total_return_%")
         saved = ret > self.best
@@ -151,7 +155,8 @@ def train_one(cfg, splits, seed, timesteps, model_path, log_path):
     for s in syms:          # check each coin on its longest unbroken piece of the val period
         ps = pieces(*splits[s]["val"], min_len=w + 200)
         if ps:
-            val_envs[s] = make_env(cfg, *max(ps, key=lambda p: len(p[0])))
+            piece = max(ps, key=lambda p: len(p[0]))
+            val_envs[s] = (make_env(cfg, *piece), make_env(cfg, *piece, start_long=1.0))
         elif s == cfg["symbol"]:
             raise SystemExit(f"{s} has no usable data in the validation period")
         else:

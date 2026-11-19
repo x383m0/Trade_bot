@@ -92,6 +92,30 @@ def rule_equity(close, pos, cost):
     return np.exp(np.concatenate([[0.0], np.cumsum(held * r - switches * cost)]))
 
 
+def rule_equity_like_bot(cfg, bars, pos):
+    """The rule traded with EXACTLY the bot's order rules (config: orders), on the same candles:
+    limit order at a candle's close that fills only if the next candle trades through it by
+    fill_margin (otherwise it's placed again next candle), maker fee per fill. Market orders: fill
+    at the close, paying fee + slippage. bars: candles with close/high/low; pos: wanted position
+    after each candle's close. Same timing as the trading env. Returns the equity curve (starts at 1)."""
+    from common import trade_rules
+    from env.trading_env import limit_filled
+    tr = trade_rules(cfg)
+    c, h, l = (np.asarray(bars[k], dtype=float) for k in ("close", "high", "low"))
+    want = np.asarray(pos, dtype=int)
+    if tr["order_type"] != "limit":
+        return rule_equity(c, want, cfg["fee"] + cfg["slippage"])
+    held, e, eq = 0, 1.0, [1.0]
+    for k in range(len(c) - 1):
+        new = held
+        if want[k] != held and limit_filled(want[k] == 1, c[k], h[k + 1], l[k + 1], tr["fill_margin"]):
+            new = int(want[k])
+        e *= np.exp(np.log(c[k + 1] / c[k]) * new - abs(new - held) * tr["maker_fee"])
+        held = new
+        eq.append(e)
+    return np.array(eq)
+
+
 def data_1h(cfg):
     """The traded coin's 1h candles, whatever candle size the bot itself uses."""
     from common import data_path
