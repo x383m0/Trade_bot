@@ -1,5 +1,41 @@
 # Trade_bot — RL crypto trading (learning project)
 
+> **Status: archived (Nov 2026).** Learning project, finished. No real money was ever traded,
+> and no API keys are stored in this repo.
+
+## Final results (what we learned)
+
+Every result below is on data the strategy never trained on (6 walk-forward periods, 2022–2025),
+with Kraken's fees and limit-order fills included.
+
+| Approach | Result |
+|---|---|
+| RL bot v1 (1h candles, 451 inputs) | Beat buy & hold in 1/6 periods, -8.5% vs +325% chained |
+| RL bot v2 (4h, 33-day horizon, 11 coins) | +39% vs buy & hold +346%; 40-100 trades per period |
+| RL bot, trend-only inputs | +339% vs +296% in the walk-forward, then **failed the one-time final exam** (Oct 2025 -> Nov 2026): -46% vs buy & hold -50%. It only learned when to buy, never when to sell |
+| RL bot, taught to sell (`start_long`) | Collapsed to buy & hold: held BTC 100% of the time the 200-day rule said cash |
+| Simple rules (moving averages, trend) | None beat buy & hold; the **200-day rule** made somewhat less but with crashes about half as deep |
+| Coin rotation | Looked good on 3 hand-picked coins; edge disappeared with 11 coins; final exam -70% |
+| Fear & Greed / funding rates | No consistent edge (funding history too short to judge) |
+| Grid bot | Lost clearly to buy & hold; the "grid profit" bot apps show hides losses on coins still held |
+| **200-day rule** | The only thing that held up everywhere: final exam -21% vs buy & hold -50% |
+
+Main lessons:
+- On price data alone, nothing reliably beat buy & hold BTC. What worked was **cutting crash damage** (200-day rule).
+- PPO kept converging to "hold" or overtrading. With a reward of "return minus buy & hold", holding scores a
+  safe 0 every candle, and the few crashes in history are too rare to teach a reliable exit.
+- A walk-forward where every period starts in cash flatters a bot that only knows when to buy. Test from both starts.
+- Write the pass mark down **before** running a final exam, and run it only once.
+
+Ideas that were never tried: evolution strategies (CMA-ES) on the 12 trend inputs, scored on whole periods
+from both starts; position sizing (0 / 50 / 100%).
+
+To pick it up again: `git pull`, `python -m data.fetch` (and `python -m data.resample` for 4h), see `COMMANDS.md`.
+`python rule_trade.py` paper trades the 200-day rule; `python walkforward.py` re-tests any settings.
+
+---
+
+
 A PPO agent (Stable-Baselines3) that learns to go **long or flat** on BTC/USD
 using **15-minute** candles, with Kraken's fees included in training.
 Learns from BTC, ETH and SOL history (Coinbase), paper-trades BTC on live Kraken prices
