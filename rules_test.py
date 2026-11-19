@@ -95,7 +95,7 @@ def main():
     windows = test_windows(cfg, args.folds)
     folds = len(windows)
     cost, sym = trade_cost(cfg), cfg["symbol"]
-    entry_cost = cfg["fee"] + cfg["slippage"]          # same buy & hold as walkforward.py
+    entry_cost = cost                                  # buy & hold pays the same cost as the rules
 
     df1h = pd.read_parquet(cfg["paths"]["data"])
     if cfg["timeframe"] != "1h":
@@ -137,7 +137,7 @@ def main():
     summ = []
     for (name, tf), g in res.groupby(["rule", "tf"], sort=False):
         summ.append({"rule": name, "tf": tf, "chained_%": chain(g["return_%"]),
-                     "wins": int((g["return_%"] > g["buy_hold_%"]).sum()),
+                     "wins": int((g["return_%"] > g["buy_hold_%"] + 0.5).sum()),   # 0.5-point margin
                      "trades_per_period": g["trades"].mean(), "in_market_%": g["in_market_%"].mean(),
                      "worst_dd_%": g["max_dd_%"].min()})
     summ = pd.DataFrame(summ)

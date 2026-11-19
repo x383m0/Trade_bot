@@ -143,7 +143,8 @@ def main():
         wanted = [btc] + list(wanted)
     closes = daily_closes(cfg, wanted)
     coins = list(closes.columns)
-    cost, entry = trade_cost(cfg), cfg["fee"] + cfg["slippage"]
+    cost = trade_cost(cfg)
+    entry = cost                                       # buy & hold pays the same cost as rotation
     if args.final:
         return final_exam(cfg, closes, cost, entry)
     windows = test_windows(cfg, args.folds)
@@ -183,8 +184,8 @@ def main():
     for name, g in res.groupby("variant", sort=False):
         held = pd.concat(mix[name], axis=1).fillna(0).mean(axis=1)
         held_s = "  ".join(f"{k.split('/')[0]} {v:.0f}%" for k, v in held.sort_index().items())
-        print(f"{name:32}{chain(g['rot_%']):+8.0f}%{int((g['rot_%'] > g['btc_%']).sum()):>6}/{folds}"
-              f"{int((g['rot_%'] > g['equal_%']).sum()):>8}/{folds}{g['rot_dd_%'].min():>11.0f}%"
+        print(f"{name:32}{chain(g['rot_%']):+8.0f}%{int((g['rot_%'] > g['btc_%'] + 0.5).sum()):>6}/{folds}"
+              f"{int((g['rot_%'] > g['equal_%'] + 0.5).sum()):>8}/{folds}{g['rot_dd_%'].min():>11.0f}%"
               f"{g['switches'].mean():>10.0f}   {held_s}")
     print(f"{'buy & hold BTC':32}{btc_chain:+8.0f}%{'':21}{one['btc_dd_%'].min():>11.0f}%")
     print(f"{'buy & hold all coins equally':32}{eq_chain:+8.0f}%{'':21}{one['equal_dd_%'].min():>11.0f}%")
@@ -195,7 +196,7 @@ def main():
     print(show.round(1).to_string(index=False))
 
     summ = res.groupby("variant", sort=False).apply(
-        lambda g: pd.Series({"chained": chain(g["rot_%"]), "wins_btc": (g["rot_%"] > g["btc_%"]).sum()}),
+        lambda g: pd.Series({"chained": chain(g["rot_%"]), "wins_btc": (g["rot_%"] > g["btc_%"] + 0.5).sum()}),
         include_groups=False)
     good = summ[(summ["chained"] > btc_chain) & (summ["wins_btc"] >= folds * 0.67)]
     beat_some = summ[summ["chained"] > btc_chain]

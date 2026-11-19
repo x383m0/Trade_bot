@@ -73,6 +73,8 @@ Watch it live in the dashboard's **Training progress** tab. Stop anytime with `C
 | `python rotation_test.py` | **Coin rotation**: hold whichever of BTC / ETH / SOL rose most lately (or cash if all are falling), on the same 6 periods. Compared with buy & hold BTC and with holding all coins equally. About a minute, no training |
 | `python rotation_test.py --coins wide` | Same with 11 coins (BTC ETH SOL XRP ADA DOGE LTC LINK AVAX DOT BCH): less hindsight than picking today's winners. Download the extra coins first: `python -m data.fetch --symbol XRP/USD ADA/USD DOGE/USD LTC/USD LINK/USD AVAX/USD DOT/USD BCH/USD` |
 | `python rotation_test.py --coins wide --final` | **One-time final exam**: the variant chosen in advance (30-day leader, weekly) on the last 15% of history. Run it once only |
+| `python -m data.fetch_extra` | Download **Fear & Greed Index** (alternative.me, daily since 2018) and **BTC funding rates** (Kraken Futures). Free, no key |
+| `python info_test.py` | Rules using that new information (greed exit, fear buyer, crowded longs exit, and the 200-day rule combined with them) vs buy & hold and vs the 200-day rule, on the 6 periods + the final period |
 
 **Walk-forward** is the most trustworthy test: for each period it trains new bots only on data
 *before* it, then lets them trade that period unseen. It reports in how many periods the bot beat
